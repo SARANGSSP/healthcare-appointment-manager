@@ -1,20 +1,105 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "../../components/shell/AppShell";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { Input } from "../../components/ui/Input";
+import { Toast, type ToastVariant } from "../../components/ui/Toast";
 import { VitalsLine } from "../../components/ui/VitalsLine";
-import { clearSession } from "../../lib/api";
+import {
+  clearSession,
+  fetchDoctorAvailability,
+  fetchDoctors,
+  type Doctor,
+  type DoctorAvailability,
+} from "../../lib/api";
 import { useRequireRole } from "../../lib/useRequireRole";
 
-// Chunk 3's "done when": a patient lands here, empty, right after
-// login/register. Real content ("upcoming appointment" + "Find a
-// doctor") is Chunk 17 per Frontend Design Document §3.1. Chunk 4
-// adds the shell/nav + design tokens this screen now sits inside.
 export default function PatientHome() {
   const ready = useRequireRole("patient");
   const router = useRouter();
+
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [loadingDoctors, setLoadingDoctors] = useState(true);
+
+  // Search filter state
+  const [specialisationFilter, setSpecialisationFilter] = useState("");
+
+  // Selected doctor and availability state
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+  const [availability, setAvailability] = useState<DoctorAvailability | null>(null);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<{
+    variant: ToastVariant;
+    title: string;
+    body?: string;
+  } | null>(null);
+
+  const showToast = (variant: ToastVariant, title: string, body?: string) => {
+    setToast({ variant, title, body });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const loadDoctors = useCallback(async (spec?: string) => {
+    try {
+      setLoadingDoctors(true);
+      const data = await fetchDoctors(spec);
+      setDoctors(data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load doctors";
+      showToast("failed", "Error searching doctors", msg);
+    } finally {
+      setLoadingDoctors(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ready) {
+      loadDoctors();
+    }
+  }, [ready, loadDoctors]);
+
+  const handleFilterChange = (val: string) => {
+    setSpecialisationFilter(val);
+    loadDoctors(val.trim() || undefined);
+  };
+
+  const loadAvailability = useCallback(
+    async (docId: number, dateStr: string) => {
+      try {
+        setLoadingAvailability(true);
+        const data = await fetchDoctorAvailability(docId, dateStr);
+        setAvailability(data);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to compute availability";
+        showToast("failed", "Error checking availability", msg);
+      } finally {
+        setLoadingAvailability(false);
+      }
+    },
+    []
+  );
+
+  const handleSelectDoctor = (doc: Doctor) => {
+    setSelectedDoctor(doc);
+    loadAvailability(doc.id, selectedDate);
+  };
+
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    if (selectedDoctor) {
+      loadAvailability(selectedDoctor.id, newDate);
+    }
+  };
 
   if (!ready) return null;
 
@@ -27,11 +112,173 @@ export default function PatientHome() {
         router.push("/login");
       }}
     >
-      <VitalsLine tone="sage" />
-      <Card>
-        <h1>Patient home</h1>
-        <p>You&apos;re logged in as a patient. Search and booking land in later chunks.</p>
-      </Card>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        {toast && <Toast variant={toast.variant} title={toast.title}>{toast.body}</Toast>}
+
+        <div>
+          <h1>Find a Doctor & Check Availability</h1>
+          <p style={{ color: "var(--color-slate)", margin: 0 }}>
+            Search by medical specialisation and view real-time available consultation slots.
+          </p>
+        </div>
+
+        <VitalsLine tone="sage" />
+
+        {/* Doctor Search & Filter Card */}
+        <Card>
+          <h2>Search Doctors</h2>
+          <div style={{ marginTop: "0.75rem" }}>
+            <Input
+              label="Filter by Specialisation"
+              placeholder="e.g. Cardiology, Neurology, Pediatrics..."
+              value={specialisationFilter}
+              onChange={(e) => handleFilterChange(e.target.value)}
+            />
+          </div>
+
+          <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {loadingDoctors ? (
+              <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>
+                Searching doctors...
+              </p>
+            ) : doctors.length === 0 ? (
+              <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>
+                No doctors found matching "{specialisationFilter}".
+              </p>
+            ) : (
+              doctors.map((doc) => (
+                <div
+                  key={doc.id}
+                  style={{
+                    padding: "1rem",
+                    borderRadius: "var(--radius-control)",
+                    border: "1px solid var(--color-border)",
+                    background:
+                      selectedDoctor?.id === doc.id
+                        ? "var(--color-sage-tint)"
+                        : "var(--color-paper-raised)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: "block", fontSize: "1.0625rem" }}>
+                      {doc.full_name}
+                    </strong>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
+                      <Badge variant="sage">{doc.specialisation}</Badge>
+                      <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)", fontFamily: "var(--font-mono)" }}>
+                        {doc.slot_duration_minutes} min slots
+                      </span>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant={selectedDoctor?.id === doc.id ? "primary" : "secondary"}
+                    onClick={() => handleSelectDoctor(doc)}
+                  >
+                    {selectedDoctor?.id === doc.id ? "Viewing Schedule" : "View Availability"}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+
+        {/* Selected Doctor Availability Inspector */}
+        {selectedDoctor && (
+          <Card>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div>
+                <h2>{selectedDoctor.full_name}</h2>
+                <p style={{ fontSize: "0.875rem", color: "var(--color-slate)", margin: 0 }}>
+                  Computed Schedule for {selectedDate}
+                </p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedDoctor(null)}>
+                Close Schedule
+              </Button>
+            </div>
+
+            <div style={{ marginTop: "1rem", maxWidth: "300px" }}>
+              <Input
+                label="Select Date"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+              />
+            </div>
+
+            <div style={{ marginTop: "1.5rem" }}>
+              {loadingAvailability ? (
+                <p style={{ color: "var(--color-slate)", padding: "1rem 0" }}>
+                  Computing free slots...
+                </p>
+              ) : availability?.on_leave ? (
+                <div style={{ padding: "1rem", borderRadius: "var(--radius-control)", background: "var(--color-coral-tint)", border: "1px solid var(--color-coral)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Badge variant="coral">ON LEAVE</Badge>
+                    <strong style={{ color: "#a1432e" }}>Doctor unavailable on this date</strong>
+                  </div>
+                  {availability.leave_reason && (
+                    <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.875rem", color: "#a1432e" }}>
+                      Reason: {availability.leave_reason}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                    <Badge variant="sage">
+                      {availability?.slots.filter((s) => s.status === "available").length || 0} Slots Available
+                    </Badge>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)" }}>
+                      Slot duration: {availability?.slot_duration_minutes} mins
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    {availability?.slots.map((slot) => {
+                      const isAvailable = slot.status === "available";
+                      return (
+                        <div
+                          key={slot.start_time}
+                          style={{
+                            padding: "0.625rem 0.5rem",
+                            borderRadius: "var(--radius-control)",
+                            textAlign: "center",
+                            fontSize: "0.875rem",
+                            fontFamily: "var(--font-mono)",
+                            border: `1px solid ${isAvailable ? "var(--color-sage)" : "var(--color-border)"}`,
+                            background: isAvailable ? "var(--color-sage-tint)" : "var(--color-paper)",
+                            color: isAvailable ? "#3f5b44" : "var(--color-slate)",
+                            opacity: isAvailable ? 1 : 0.6,
+                          }}
+                        >
+                          <strong>{slot.start_time}</strong>
+                          <span style={{ display: "block", fontSize: "0.75rem" }}>
+                            {isAvailable ? "Available" : "Taken"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+      </div>
     </AppShell>
   );
 }

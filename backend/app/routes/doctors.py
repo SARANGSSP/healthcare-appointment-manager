@@ -3,19 +3,20 @@ Doctor & Admin Profile Management endpoints (Build Plan Chunk 5 / Design Documen
 Admin CRUD operations for Doctor profiles + doctor search for patients.
 """
 import re
+from datetime import datetime, time, timedelta
 
 import bcrypt
 from flask import Blueprint, g, jsonify, request
 
 from app.auth.decorators import login_required, role_required
 from app.extensions import db
-from app.models import DoctorLeave, DoctorProfile, User
-from datetime import datetime
+from app.models import Appointment, DoctorLeave, DoctorProfile, User
 
 
 doctors_bp = Blueprint("doctors", __name__)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 DEFAULT_WORKING_HOURS = {
     "mon": ["09:00-13:00", "14:00-17:00"],
@@ -81,7 +82,110 @@ def get_doctor(doctor_id):
     return jsonify(_doctor_json(doc)), 200
 
 
+def _generate_slots(working_windows, duration_minutes):
+    """Slices working time windows into slot intervals."""
+    slots = []
+    if not working_windows or not isinstance(working_windows, list):
+        return slots
+
+    for window in working_windows:
+        if not isinstance(window, str) or "-" not in window:
+            continue
+        parts = window.split("-")
+        try:
+            start_dt = datetime.strptime(parts[0].strip(), "%H:%M")
+            end_dt = datetime.strptime(parts[1].strip(), "%H:%M")
+        except ValueError:
+            continue
+
+        delta = timedelta(minutes=duration_minutes)
+        curr = start_dt
+        while curr + delta <= end_dt:
+            slot_start_str = curr.strftime("%H:%M")
+            slot_end_str = (curr + delta).strftime("%H:%M")
+            slots.append((slot_start_str, slot_end_str))
+            curr += delta
+
+    return slots
+
+
+@doctors_bp.get("/doctors/<int:doctor_id>/availability")
+@login_required
+def doctor_availability(doctor_id):
+    """
+    Computes real slot availability for a doctor on a specific date:
+    (Working hours - Leave - Existing active bookings)
+    """
+    doc = DoctorProfile.query.get(doctor_id)
+    if not doc:
+        return _error("not_found", "Doctor profile not found", 404)
+
+    date_str = (request.args.get("date") or "").strip()
+    if not date_str:
+        target_date = datetime.now().date()
+        date_str = target_date.isoformat()
+    else:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return _error("validation_error", "Check the highlighted fields", 422, [
+                {"field": "date", "message": "Date must be in YYYY-MM-DD format"}
+            ])
+
+    weekday_name = WEEKDAYS[target_date.weekday()]
+
+    # 1. Check if doctor is on leave
+    leave = DoctorLeave.query.filter_by(doctor_id=doctor_id, leave_date=target_date).first()
+    if leave:
+        return jsonify({
+            "doctor_id": doc.id,
+            "date": date_str,
+            "weekday": weekday_name,
+            "on_leave": True,
+            "leave_reason": leave.reason,
+            "slot_duration_minutes": doc.slot_duration_minutes,
+            "slots": []
+        }), 200
+
+    # 2. Get working hours for the weekday
+    working_hours = doc.working_hours or DEFAULT_WORKING_HOURS
+    windows = working_hours.get(weekday_name, [])
+    if not windows and weekday_name in ("mon", "tue", "wed", "thu", "fri"):
+        windows = DEFAULT_WORKING_HOURS.get(weekday_name, [])
+
+    raw_slots = _generate_slots(windows, doc.slot_duration_minutes)
+
+    # 3. Query existing active appointments for this doctor & date
+    active_appts = Appointment.query.filter(
+        Appointment.doctor_id == doctor_id,
+        Appointment.appt_date == target_date,
+        Appointment.status.in_(["held", "confirmed"])
+    ).all()
+
+    taken_starts = {appt.slot_start.strftime("%H:%M") for appt in active_appts}
+
+    slot_list = []
+    for start_s, end_s in raw_slots:
+        is_taken = start_s in taken_starts
+        slot_list.append({
+            "start_time": start_s,
+            "end_time": end_s,
+            "status": "taken" if is_taken else "available"
+        })
+
+    return jsonify({
+        "doctor_id": doc.id,
+        "date": date_str,
+        "weekday": weekday_name,
+        "on_leave": False,
+        "leave_reason": None,
+        "slot_duration_minutes": doc.slot_duration_minutes,
+        "slots": slot_list
+    }), 200
+
+
 @doctors_bp.post("/doctors")
+
 @login_required
 @role_required("admin")
 def create_doctor():

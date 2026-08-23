@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 6 — Doctor Leave Marking (basic)** (Stage B, Build Plan §Chunk 6)
+Status: **Chunk 7 — Availability Search** (Stage C, Build Plan §Chunk 7)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -213,5 +213,15 @@ npm run dev                   # -> http://localhost:3000
 - [x] Marking duplicate leave for the same doctor and date returns `409 Conflict`.
 - [x] Doctor Portal on `/doctor` renders practice schedule settings and a leave date marking form.
 - [x] Marked leave dates are listed in the Scheduled Leave table on `/doctor` with real-time remove actions.
+
+## Done-when check (Chunk 7)
+
+- [x] Computed slot availability endpoint (`GET /doctors/<id>/availability?date=YYYY-MM-DD`) calculates real slots (working hours − leave − active bookings).
+- [x] Slices working hours windows into custom intervals according to `slot_duration_minutes`.
+- [x] If doctor is on leave, returns `on_leave: True` and empty `slots: []`.
+- [x] Slots matching `held` or `confirmed` appointments are marked as `taken` while free slots remain `available`.
+- [x] Patient Portal on `/patient` allows filtering doctors by specialisation.
+- [x] Interactive schedule inspector lets patients choose a date and view real-time available vs taken slot chips.
+
 
 

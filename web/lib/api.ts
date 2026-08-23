@@ -56,6 +56,23 @@ export interface MarkLeaveInput {
   reason?: string;
 }
 
+export interface TimeSlot {
+  start_time: string;
+  end_time: string;
+  status: "available" | "taken";
+}
+
+export interface DoctorAvailability {
+  doctor_id: number;
+  date: string;
+  weekday: string;
+  on_leave: boolean;
+  leave_reason: string | null;
+  slot_duration_minutes: number;
+  slots: TimeSlot[];
+}
+
+
 
 interface ApiErrorBody {
   error?: {
@@ -190,4 +207,10 @@ export function deleteDoctorLeave(doctorId: number, leaveId: number): Promise<{ 
     method: "DELETE",
   });
 }
+
+export function fetchDoctorAvailability(doctorId: number, date?: string): Promise<DoctorAvailability> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  return request<DoctorAvailability>(`/doctors/${doctorId}/availability${query}`);
+}
+
 
