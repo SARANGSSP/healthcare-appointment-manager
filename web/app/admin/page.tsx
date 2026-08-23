@@ -8,275 +8,190 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
-import { Table, type TableColumn } from "../../components/ui/Table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/Table";
 import { Toast, type ToastVariant } from "../../components/ui/Toast";
 import { VitalsLine } from "../../components/ui/VitalsLine";
 import {
   clearSession,
   createDoctor,
   deleteDoctor,
+  fetchAdminNotifications,
+  fetchAdminOverview,
   fetchDoctors,
+  retryNotification,
   updateDoctor,
   type Doctor,
 } from "../../lib/api";
 import { useRequireRole } from "../../lib/useRequireRole";
 
-const DEFAULT_WORKING_HOURS = {
-  mon: ["09:00-13:00", "14:00-17:00"],
-  tue: ["09:00-13:00", "14:00-17:00"],
-  wed: ["09:00-13:00", "14:00-17:00"],
-  thu: ["09:00-13:00", "14:00-17:00"],
-  fri: ["09:00-13:00", "14:00-17:00"],
-};
-
-export default function AdminHome() {
+export default function AdminPortal() {
   const ready = useRequireRole("admin");
   const router = useRouter();
 
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Overview metrics state
+  const [overview, setOverview] = useState<{
+    total_bookings: number;
+    active_doctors: number;
+    total_patients: number;
+    failed_notifications: number;
+    system_status: string;
+  } | null>(null);
 
-  // Toast notification state
+  // Doctors management state
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [loadingDoctors, setLoadingDoctors] = useState(true);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<
+    {
+      id: number;
+      appointment_id: number;
+      type: string;
+      channel: string;
+      status: string;
+      retry_count: number;
+      last_attempt_at: string | null;
+      created_at: string | null;
+    }[]
+  >([]);
+
+  // Modals state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editDoctor, setEditDoctor] = useState<Doctor | null>(null);
+  const [deleteDoctorId, setDeleteDoctorId] = useState<number | null>(null);
+
+  // Form input state
+  const [fullName, setFullName] = useState("");
+  const [specialisation, setSpecialisation] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [slotDuration, setSlotDuration] = useState(20);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Toast state
   const [toast, setToast] = useState<{
     variant: ToastVariant;
     title: string;
     body?: string;
   } | null>(null);
 
-  // Modal states
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
-  const [deletingDoctor, setDeletingDoctor] = useState<Doctor | null>(null);
-
-  // Form inputs state
-  const [formEmail, setFormEmail] = useState("");
-  const [formPassword, setFormPassword] = useState("");
-  const [formFullName, setFormFullName] = useState("");
-  const [formSpecialisation, setFormSpecialisation] = useState("");
-  const [formSlotDuration, setFormSlotDuration] = useState("20");
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
   const showToast = (variant: ToastVariant, title: string, body?: string) => {
     setToast({ variant, title, body });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
+    setTimeout(() => setToast(null), 5000);
   };
 
-  const loadDoctors = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      setLoading(true);
-      const data = await fetchDoctors();
-      setDoctors(data);
+      setLoadingDoctors(true);
+      const [docData, ovData, notifData] = await Promise.all([
+        fetchDoctors(),
+        fetchAdminOverview().catch(() => null),
+        fetchAdminNotifications().catch(() => []),
+      ]);
+      setDoctors(docData);
+      if (ovData) setOverview(ovData);
+      setNotifications(notifData);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load doctors";
-      showToast("failed", "Error loading doctors", msg);
+      const msg = err instanceof Error ? err.message : "Failed to load admin data";
+      showToast("failed", "Error loading data", msg);
     } finally {
-      setLoading(false);
+      setLoadingDoctors(false);
     }
   }, []);
 
   useEffect(() => {
     if (ready) {
-      loadDoctors();
+      loadData();
     }
-  }, [ready, loadDoctors]);
+  }, [ready, loadData]);
 
-  const openAddModal = () => {
-    setFormEmail("");
-    setFormPassword("");
-    setFormFullName("");
-    setFormSpecialisation("General Medicine");
-    setFormSlotDuration("20");
-    setFormError(null);
-    setIsAddOpen(true);
-  };
-
-  const openEditModal = (doc: Doctor) => {
-    setEditingDoctor(doc);
-    setFormEmail(doc.email || "");
-    setFormPassword(""); // Password not updated on edit unless provided
-    setFormFullName(doc.full_name);
-    setFormSpecialisation(doc.specialisation);
-    setFormSlotDuration(String(doc.slot_duration_minutes));
-    setFormError(null);
-  };
-
-  const handleCreateSubmit = async (e: FormEvent) => {
+  const handleAddSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setFormError(null);
-
-    if (!formEmail.trim()) {
-      setFormError("Email address is required.");
-      return;
-    }
-    if (formPassword.length < 8) {
-      setFormError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!formFullName.trim()) {
-      setFormError("Full name is required.");
-      return;
-    }
-    if (!formSpecialisation.trim()) {
-      setFormError("Specialisation is required.");
-      return;
-    }
-
-    const duration = parseInt(formSlotDuration, 10);
-    if (isNaN(duration) || duration <= 0) {
-      setFormError("Slot duration must be a positive number.");
-      return;
-    }
-
     try {
       setSubmitting(true);
       await createDoctor({
-        email: formEmail.trim(),
-        password: formPassword,
-        full_name: formFullName.trim(),
-        specialisation: formSpecialisation.trim(),
-        slot_duration_minutes: duration,
-        working_hours: DEFAULT_WORKING_HOURS,
+        full_name: fullName,
+        specialisation,
+        email,
+        password,
+        slot_duration_minutes: Number(slotDuration) || 20,
       });
-      showToast("success", "Doctor profile created", `Dr. ${formFullName} was successfully added.`);
-      setIsAddOpen(false);
-      loadDoctors();
+      showToast("success", "Doctor Profile Created", `Dr. ${fullName} has been added.`);
+      setShowAddModal(false);
+      resetForm();
+      loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to create doctor profile";
-      setFormError(msg);
+      const msg = err instanceof Error ? err.message : "Failed to create doctor";
+      showToast("failed", "Error creating doctor", msg);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleUpdateSubmit = async (e: FormEvent) => {
+  const handleEditSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!editingDoctor) return;
-    setFormError(null);
-
-    if (!formFullName.trim()) {
-      setFormError("Full name is required.");
-      return;
-    }
-    if (!formSpecialisation.trim()) {
-      setFormError("Specialisation is required.");
-      return;
-    }
-
-    const duration = parseInt(formSlotDuration, 10);
-    if (isNaN(duration) || duration <= 0) {
-      setFormError("Slot duration must be a positive number.");
-      return;
-    }
-
+    if (!editDoctor) return;
     try {
       setSubmitting(true);
-      await updateDoctor(editingDoctor.id, {
-        email: formEmail.trim() || undefined,
-        full_name: formFullName.trim(),
-        specialisation: formSpecialisation.trim(),
-        slot_duration_minutes: duration,
+      await updateDoctor(editDoctor.id, {
+        full_name: fullName,
+        specialisation,
+        email,
+        slot_duration_minutes: Number(slotDuration) || 20,
       });
-      showToast("success", "Doctor profile updated", `Dr. ${formFullName}'s profile was updated.`);
-      setEditingDoctor(null);
-      loadDoctors();
+      showToast("success", "Doctor Profile Updated", `Dr. ${fullName}'s profile updated.`);
+      setEditDoctor(null);
+      resetForm();
+      loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to update doctor profile";
-      setFormError(msg);
+      const msg = err instanceof Error ? err.message : "Failed to update doctor";
+      showToast("failed", "Error updating doctor", msg);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingDoctor) return;
+    if (!deleteDoctorId) return;
     try {
-      setSubmitting(true);
-      await deleteDoctor(deletingDoctor.id);
-      showToast("success", "Doctor deleted", `Dr. ${deletingDoctor.full_name} has been removed.`);
-      setDeletingDoctor(null);
-      loadDoctors();
+      await deleteDoctor(deleteDoctorId);
+      showToast("success", "Doctor Deleted", "Doctor profile removed successfully.");
+      setDeleteDoctorId(null);
+      loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to delete doctor";
-      showToast("failed", "Delete failed", msg);
-    } finally {
-      setSubmitting(false);
+      showToast("failed", "Error deleting doctor", msg);
     }
   };
 
-  if (!ready) return null;
+  const handleRetryNotification = async (notifId: number) => {
+    try {
+      const res = await retryNotification(notifId);
+      showToast("info", "Notification Retried", res.message);
+      loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to retry notification";
+      showToast("failed", "Retry failed", msg);
+    }
+  };
 
-  const columns: TableColumn<Doctor>[] = [
-    {
-      key: "name",
-      header: "Doctor Name & Email",
-      render: (doc) => (
-        <div>
-          <strong style={{ display: "block" }}>{doc.full_name}</strong>
-          <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)" }}>
-            {doc.email || "No email"}
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: "specialisation",
-      header: "Specialisation",
-      render: (doc) => <Badge variant="info">{doc.specialisation}</Badge>,
-    },
-    {
-      key: "slot_duration",
-      header: "Slot Duration",
-      render: (doc) => (
-        <span style={{ fontFamily: "var(--font-mono)" }}>
-          {doc.slot_duration_minutes} mins
-        </span>
-      ),
-    },
-    {
-      key: "working_hours",
-      header: "Working Hours",
-      render: (doc) => {
-        const days = Object.keys(doc.working_hours || {});
-        if (days.length === 0) return <span style={{ color: "var(--color-slate)" }}>Not set</span>;
-        return (
-          <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)" }}>
-            Mon-Fri (09:00-13:00, 14:00-17:00)
-          </span>
-        );
-      },
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      render: (doc) => (
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditModal(doc);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeletingDoctor(doc);
-            }}
-          >
-            Delete
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  const resetForm = () => {
+    setFullName("");
+    setSpecialisation("");
+    setEmail("");
+    setPassword("");
+    setSlotDuration(20);
+  };
+
+  const openEditModal = (doc: Doctor) => {
+    setEditDoctor(doc);
+    setFullName(doc.full_name);
+    setSpecialisation(doc.specialisation);
+    setEmail(doc.email);
+    setSlotDuration(doc.slot_duration_minutes);
+  };
+
+  if (!ready) return null;
 
   return (
     <AppShell
@@ -289,212 +204,209 @@ export default function AdminHome() {
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         {toast && <Toast variant={toast.variant} title={toast.title}>{toast.body}</Toast>}
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "var(--space-2)",
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
           <div>
-            <h1>Doctor Management</h1>
+            <h1>Admin Dashboard</h1>
             <p style={{ color: "var(--color-slate)", margin: 0 }}>
-              Manage doctor profiles, specialisations, and appointment slot durations.
+              System overview, doctor profile management, and notification delivery logs.
             </p>
           </div>
-          <Button variant="primary" onClick={openAddModal}>
-            + Add Doctor
+          <Button
+            variant="primary"
+            onClick={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
+          >
+            + Add Doctor Profile
           </Button>
         </div>
 
-        <VitalsLine tone="ink" />
+        <VitalsLine tone="sage" animate />
 
+        {/* OVERVIEW METRICS CARDS (Chunk 18) */}
+        {overview && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+            <Card style={{ padding: "1rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase" }}>Total Bookings</span>
+              <strong style={{ fontSize: "1.75rem", display: "block", fontFamily: "var(--font-mono)", marginTop: "0.25rem" }}>
+                {overview.total_bookings}
+              </strong>
+            </Card>
+
+            <Card style={{ padding: "1rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase" }}>Active Doctors</span>
+              <strong style={{ fontSize: "1.75rem", display: "block", fontFamily: "var(--font-mono)", marginTop: "0.25rem" }}>
+                {overview.active_doctors}
+              </strong>
+            </Card>
+
+            <Card style={{ padding: "1rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase" }}>Total Patients</span>
+              <strong style={{ fontSize: "1.75rem", display: "block", fontFamily: "var(--font-mono)", marginTop: "0.25rem" }}>
+                {overview.total_patients}
+              </strong>
+            </Card>
+
+            <Card style={{ padding: "1rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase" }}>Failed Notifications</span>
+              <strong style={{ fontSize: "1.75rem", display: "block", fontFamily: "var(--font-mono)", color: overview.failed_notifications > 0 ? "var(--color-coral)" : "var(--color-sage)", marginTop: "0.25rem" }}>
+                {overview.failed_notifications}
+              </strong>
+            </Card>
+          </div>
+        )}
+
+        {/* DOCTOR MANAGEMENT TABLE (Chunk 5) */}
         <Card>
-          {loading ? (
-            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "2rem" }}>
-              Loading doctor profiles...
+          <h2>Doctor Profiles</h2>
+          {loadingDoctors ? (
+            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>Loading doctor profiles...</p>
+          ) : doctors.length === 0 ? (
+            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>
+              No doctor profiles configured yet. Click "+ Add Doctor Profile" to get started.
             </p>
           ) : (
-            <Table
-              columns={columns}
-              rows={doctors}
-              rowKey={(doc) => doc.id}
-              emptyTitle="No doctor profiles created yet"
-              emptyAction={
-                <Button variant="primary" size="sm" onClick={openAddModal}>
-                  + Add First Doctor
-                </Button>
-              }
-            />
+            <Table style={{ marginTop: "1rem" }}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Doctor Name</TableHead>
+                  <TableHead>Specialisation</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Slot Duration</TableHead>
+                  <TableHead style={{ textAlign: "right" }}>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {doctors.map((doc) => (
+                  <TableRow key={doc.id}>
+                    <TableCell style={{ fontWeight: 600 }}>{doc.full_name}</TableCell>
+                    <TableCell><Badge variant="sage">{doc.specialisation}</Badge></TableCell>
+                    <TableCell style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem" }}>{doc.email}</TableCell>
+                    <TableCell style={{ fontFamily: "var(--font-mono)" }}>{doc.slot_duration_minutes} min</TableCell>
+                    <TableCell style={{ textAlign: "right" }}>
+                      <Button size="sm" variant="secondary" onClick={() => openEditModal(doc)} style={{ marginRight: "0.5rem" }}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteDoctorId(doc.id)}>
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </Card>
+
+        {/* NOTIFICATION MONITORING TABLE (Chunk 14) */}
+        <Card>
+          <h2>System Notification Delivery Logs</h2>
+          {notifications.length === 0 ? (
+            <p style={{ color: "var(--color-slate)", marginTop: "0.5rem" }}>No transactional notifications logged yet.</p>
+          ) : (
+            <Table style={{ marginTop: "1rem" }}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Notification Type</TableHead>
+                  <TableHead>Channel</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Retries</TableHead>
+                  <TableHead style={{ textAlign: "right" }}>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {notifications.map((n) => (
+                  <TableRow key={n.id}>
+                    <TableCell style={{ fontWeight: 600 }}>{n.type}</TableCell>
+                    <TableCell style={{ textTransform: "uppercase", fontSize: "0.8125rem" }}>{n.channel}</TableCell>
+                    <TableCell>
+                      <Badge variant={n.status === "sent" ? "sage" : n.status.includes("failed") ? "coral" : "amber"}>
+                        {n.status.toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell style={{ fontFamily: "var(--font-mono)" }}>{n.retry_count} / 5</TableCell>
+                    <TableCell style={{ textAlign: "right" }}>
+                      <Button size="sm" variant="ghost" onClick={() => handleRetryNotification(n.id)}>
+                        Retry Job
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+
+        {/* ADD DOCTOR MODAL */}
+        {showAddModal && (
+          <div className="modal-overlay">
+            <div className="modal-dialog">
+              <div className="modal-header">
+                <h2>Add Doctor Profile</h2>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem" }}>
+                  &times;
+                </button>
+              </div>
+              <form onSubmit={handleAddSubmit} style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <Input label="Full Name" placeholder="Dr. Jane Smith" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <Input label="Specialisation" placeholder="Cardiology" value={specialisation} onChange={(e) => setSpecialisation(e.target.value)} required />
+                <Input label="Email Address" type="email" placeholder="jane.smith@clinic.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                <Input label="Slot Duration (Minutes)" type="number" value={slotDuration.toString()} onChange={(e) => setSlotDuration(Number(e.target.value))} required />
+
+                <div className="modal-footer" style={{ marginTop: "1rem" }}>
+                  <Button type="button" variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
+                  <Button type="submit" variant="primary" disabled={submitting}>{submitting ? "Creating..." : "Save Doctor Profile"}</Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT DOCTOR MODAL */}
+        {editDoctor && (
+          <div className="modal-overlay">
+            <div className="modal-dialog">
+              <div className="modal-header">
+                <h2>Edit Doctor Profile</h2>
+                <button type="button" onClick={() => setEditDoctor(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem" }}>
+                  &times;
+                </button>
+              </div>
+              <form onSubmit={handleEditSubmit} style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <Input label="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <Input label="Specialisation" value={specialisation} onChange={(e) => setSpecialisation(e.target.value)} required />
+                <Input label="Email Address" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input label="Slot Duration (Minutes)" type="number" value={slotDuration.toString()} onChange={(e) => setSlotDuration(Number(e.target.value))} required />
+
+                <div className="modal-footer" style={{ marginTop: "1rem" }}>
+                  <Button type="button" variant="secondary" onClick={() => setEditDoctor(null)}>Cancel</Button>
+                  <Button type="submit" variant="primary" disabled={submitting}>{submitting ? "Saving..." : "Update Profile"}</Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE CONFIRMATION MODAL */}
+        {deleteDoctorId && (
+          <div className="modal-overlay">
+            <div className="modal-dialog" style={{ maxWidth: "400px" }}>
+              <div className="modal-header">
+                <h2>Confirm Deletion</h2>
+              </div>
+              <p style={{ color: "var(--color-slate)", marginTop: "0.5rem" }}>
+                Are you sure you want to delete this doctor profile? This action will remove their account and schedule.
+              </p>
+              <div className="modal-footer" style={{ marginTop: "1rem" }}>
+                <Button variant="secondary" onClick={() => setDeleteDoctorId(null)}>Cancel</Button>
+                <Button variant="primary" onClick={handleDeleteConfirm}>Confirm Delete</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Add Doctor Modal */}
-      {isAddOpen && (
-        <div className="modal-overlay" onClick={() => setIsAddOpen(false)}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Add New Doctor</h2>
-              <Button variant="ghost" size="sm" onClick={() => setIsAddOpen(false)}>
-                ✕
-              </Button>
-            </div>
-
-            <form onSubmit={handleCreateSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {formError && <p className="field-error">{formError}</p>}
-
-              <Input
-                label="Full Name"
-                placeholder="e.g. Dr. Sarah Mehta"
-                value={formFullName}
-                onChange={(e) => setFormFullName(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Email Address"
-                type="email"
-                placeholder="doctor@clinic.com"
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Password"
-                type="password"
-                placeholder="At least 8 characters"
-                value={formPassword}
-                onChange={(e) => setFormPassword(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Specialisation"
-                placeholder="e.g. Cardiology, Pediatrics"
-                value={formSpecialisation}
-                onChange={(e) => setFormSpecialisation(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Slot Duration (Minutes)"
-                type="number"
-                min="5"
-                max="120"
-                value={formSlotDuration}
-                onChange={(e) => setFormSlotDuration(e.target.value)}
-                hint="Default is 20 minutes per consultation slot."
-                required
-              />
-
-              <div className="modal-footer">
-                <Button type="button" variant="secondary" onClick={() => setIsAddOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting ? "Creating..." : "Save Doctor Profile"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Doctor Modal */}
-      {editingDoctor && (
-        <div className="modal-overlay" onClick={() => setEditingDoctor(null)}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Edit Doctor Profile</h2>
-              <Button variant="ghost" size="sm" onClick={() => setEditingDoctor(null)}>
-                ✕
-              </Button>
-            </div>
-
-            <form onSubmit={handleUpdateSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {formError && <p className="field-error">{formError}</p>}
-
-              <Input
-                label="Full Name"
-                value={formFullName}
-                onChange={(e) => setFormFullName(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Email Address"
-                type="email"
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Specialisation"
-                value={formSpecialisation}
-                onChange={(e) => setFormSpecialisation(e.target.value)}
-                required
-              />
-
-              <Input
-                label="Slot Duration (Minutes)"
-                type="number"
-                min="5"
-                max="120"
-                value={formSlotDuration}
-                onChange={(e) => setFormSlotDuration(e.target.value)}
-                required
-              />
-
-              <div className="modal-footer">
-                <Button type="button" variant="secondary" onClick={() => setEditingDoctor(null)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting ? "Updating..." : "Update Doctor Profile"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingDoctor && (
-        <div className="modal-overlay" onClick={() => setDeletingDoctor(null)}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Confirm Doctor Deletion</h2>
-              <Button variant="ghost" size="sm" onClick={() => setDeletingDoctor(null)}>
-                ✕
-              </Button>
-            </div>
-
-            <p>
-              Are you sure you want to delete <strong>Dr. {deletingDoctor.full_name}</strong>?
-              This action will remove their profile and user account from the system.
-            </p>
-
-            <div className="modal-footer">
-              <Button type="button" variant="secondary" onClick={() => setDeletingDoctor(null)}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={submitting}
-                onClick={handleDeleteConfirm}
-              >
-                {submitting ? "Deleting..." : "Delete Doctor Profile"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppShell>
   );
 }

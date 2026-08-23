@@ -72,6 +72,29 @@ export interface DoctorAvailability {
   slots: TimeSlot[];
 }
 
+export interface SymptomSummaryData {
+  raw_symptoms: string;
+  urgency: "Low" | "Medium" | "High";
+  chief_complaint: string;
+  suggested_questions: string[];
+  llm_status: "pending" | "ok" | "failed";
+}
+
+export interface PrescriptionInputItem {
+  id?: number;
+  medication_name: string;
+  dosage?: string;
+  frequency?: string;
+  duration_days?: number;
+}
+
+export interface VisitNoteData {
+  clinical_notes: string;
+  patient_friendly_summary: string | null;
+  llm_status: "pending" | "ok" | "failed";
+  prescriptions: PrescriptionInputItem[];
+}
+
 export interface Appointment {
   id: number;
   patient_id: number;
@@ -87,7 +110,10 @@ export interface Appointment {
   confirmed_at: string | null;
   ttl_seconds: number;
   symptoms: string | null;
+  symptom_summary: SymptomSummaryData | null;
+  visit_note: VisitNoteData | null;
 }
+
 
 export interface HoldSlotInput {
   doctor_id: number;
@@ -259,6 +285,69 @@ export function confirmBooking(appointmentId: number, input: ConfirmBookingInput
     body: JSON.stringify(input),
   });
 }
+
+export function cancelAppointment(appointmentId: number): Promise<{ message: string; appointment: Appointment }> {
+  return request<{ message: string; appointment: Appointment }>(`/appointments/${appointmentId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchTodayQueue(date?: string): Promise<Appointment[]> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  return request<Appointment[]>(`/appointments/today${query}`);
+}
+
+export function submitVisitNotes(
+  appointmentId: number,
+  input: { clinical_notes: string; prescriptions?: PrescriptionInputItem[] }
+): Promise<Appointment> {
+  return request<Appointment>(`/appointments/${appointmentId}/visit-notes`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchAppointmentSummary(appointmentId: number): Promise<Appointment> {
+  return request<Appointment>(`/appointments/${appointmentId}/summary`);
+}
+
+export function fetchAdminOverview(): Promise<{
+  total_bookings: number;
+  active_doctors: number;
+  total_patients: number;
+  failed_notifications: number;
+  system_status: string;
+}> {
+  return request<{
+    total_bookings: number;
+    active_doctors: number;
+    total_patients: number;
+    failed_notifications: number;
+    system_status: string;
+  }>("/admin/overview");
+}
+
+export function fetchAdminNotifications(): Promise<
+  {
+    id: number;
+    appointment_id: number;
+    type: string;
+    channel: string;
+    status: string;
+    retry_count: number;
+    last_attempt_at: string | null;
+    created_at: string | null;
+  }[]
+> {
+  return request("/admin/notifications");
+}
+
+export function retryNotification(notificationId: number): Promise<{ message: string; status: string; retry_count: number }> {
+  return request<{ message: string; status: string; retry_count: number }>(`/admin/notifications/${notificationId}/retry`, {
+    method: "POST",
+  });
+}
+
 
 
 

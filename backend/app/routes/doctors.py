@@ -366,11 +366,34 @@ def mark_doctor_leave(doctor_id):
     if existing:
         return _error("leave_exists", "Doctor is already marked on leave for this date", 409)
 
+    # Design Document §8: Lock active appointments for this doctor & date FOR UPDATE
+    # to prevent double-booking race during leave marking
+    try:
+        active_appts = Appointment.query.filter(
+            Appointment.doctor_id == doctor_id,
+            Appointment.appt_date == leave_date,
+            Appointment.status.in_(["held", "confirmed"])
+        ).with_for_update().all()
+    except Exception:
+        # Fallback if DB engine doesn't support with_for_update (e.g. SQLite test)
+        active_appts = Appointment.query.filter(
+            Appointment.doctor_id == doctor_id,
+            Appointment.appt_date == leave_date,
+            Appointment.status.in_(["held", "confirmed"])
+        ).all()
+
+    affected_count = len(active_appts)
+    for appt in active_appts:
+        appt.status = "leave_cancelled"
+
     leave = DoctorLeave(doctor_id=doctor_id, leave_date=leave_date, reason=reason)
     db.session.add(leave)
     db.session.commit()
 
-    return jsonify(_leave_json(leave)), 201
+    res_data = _leave_json(leave)
+    res_data["affected_appointments_count"] = affected_count
+    return jsonify(res_data), 201
+
 
 
 @doctors_bp.delete("/doctors/<int:doctor_id>/leave/<int:leave_id>")

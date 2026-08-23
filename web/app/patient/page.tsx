@@ -12,6 +12,7 @@ import { TextArea } from "../../components/ui/TextArea";
 import { Toast, type ToastVariant } from "../../components/ui/Toast";
 import { VitalsLine } from "../../components/ui/VitalsLine";
 import {
+  cancelAppointment,
   clearSession,
   confirmBooking,
   fetchDoctorAvailability,
@@ -49,7 +50,7 @@ export default function PatientHome() {
   const [symptomsText, setSymptomsText] = useState("");
   const [confirming, setConfirming] = useState(false);
 
-  // Confirmed booking state
+  // Active or Confirmed booking state
   const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
 
   // Toast state
@@ -139,7 +140,6 @@ export default function PatientHome() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Slot no longer available";
       showToast("failed", "Slot unavailable", msg);
-      // Reload availability to reflect latest state
       if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
     } finally {
       setHoldingSlot(false);
@@ -190,7 +190,19 @@ export default function PatientHome() {
     }
   };
 
-  // Format seconds to mm:ss
+  // Cancel appointment handler (Chunk 10)
+  const handleCancelClick = async (apptId: number) => {
+    try {
+      await cancelAppointment(apptId);
+      showToast("info", "Appointment Cancelled", "Your appointment has been cancelled and the slot is released.");
+      setConfirmedAppointment(null);
+      if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to cancel appointment";
+      showToast("failed", "Cancellation failed", msg);
+    }
+  };
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -214,21 +226,30 @@ export default function PatientHome() {
         <div>
           <h1>Healthcare Appointments</h1>
           <p style={{ color: "var(--color-slate)", margin: 0 }}>
-            Find a doctor, select an available slot, and confirm your appointment.
+            Find a doctor, select an available slot, and manage your consultation.
           </p>
         </div>
 
         <VitalsLine tone="sage" animate={Boolean(confirmedAppointment)} />
 
-        {/* Confirmed Appointment Banner Card */}
+        {/* Confirmed Appointment Banner Card & Post-Visit Summary (Chunk 10 & 13) */}
         {confirmedAppointment && (
           <Card style={{ borderColor: "var(--color-sage)", background: "var(--color-sage-tint)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <Badge variant="sage">CONFIRMED</Badge>
-              <strong style={{ color: "#3f5b44", fontSize: "1.125rem" }}>
-                Appointment Confirmed!
-              </strong>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Badge variant={confirmedAppointment.status === "completed" ? "sage" : "sage"}>
+                  {confirmedAppointment.status.toUpperCase()}
+                </Badge>
+                <strong style={{ color: "#3f5b44", fontSize: "1.125rem" }}>
+                  Appointment Summary
+                </strong>
+              </div>
+
+              <Button size="sm" variant="ghost" onClick={() => handleCancelClick(confirmedAppointment.id)}>
+                Cancel Appointment
+              </Button>
             </div>
+
             <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               <p style={{ margin: 0 }}>
                 <strong>Doctor:</strong> Dr. {confirmedAppointment.doctor_name} ({confirmedAppointment.specialisation})
@@ -239,12 +260,33 @@ export default function PatientHome() {
                   {confirmedAppointment.slot_start} – {confirmedAppointment.slot_end}
                 </span>
               </p>
-              {confirmedAppointment.symptoms && (
-                <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.875rem", color: "var(--color-slate)" }}>
-                  <strong>Symptoms submitted:</strong> {confirmedAppointment.symptoms}
-                </p>
-              )}
             </div>
+
+            {/* Post-Visit Patient-Friendly AI Summary & Medication Schedule */}
+            {confirmedAppointment.visit_note && (
+              <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border)" }}>
+                <strong style={{ color: "var(--color-ink)", display: "block" }}>Patient Care Summary</strong>
+                <p style={{ fontSize: "0.9375rem", marginTop: "0.25rem" }}>
+                  {confirmedAppointment.visit_note.patient_friendly_summary || confirmedAppointment.visit_note.clinical_notes}
+                </p>
+
+                {confirmedAppointment.visit_note.prescriptions.length > 0 && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)", display: "block" }}>
+                      Prescription Medication Schedule:
+                    </span>
+                    <ul style={{ margin: "0.25rem 0 0 1.25rem", padding: 0, fontSize: "0.875rem" }}>
+                      {confirmedAppointment.visit_note.prescriptions.map((p, idx) => (
+                        <li key={idx}>
+                          <strong>{p.medication_name}</strong> ({p.dosage}) — {p.frequency} for {p.duration_days} days
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ marginTop: "1rem" }}>
               <Button size="sm" variant="secondary" onClick={() => setConfirmedAppointment(null)}>
                 Book Another Appointment
