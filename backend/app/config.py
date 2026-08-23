@@ -30,9 +30,13 @@ class Config:
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # --- Auth (Chunk 3) ---
+    JWT_SECRET = os.environ.get("JWT_SECRET")
+    JWT_ACCESS_TOKEN_EXPIRES_MINUTES = os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "15")
+    JWT_REFRESH_TOKEN_EXPIRES_DAYS = os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "7")
+
     # --- Reserved for upcoming chunks (see .env.example) ---
     REDIS_URL = os.environ.get("REDIS_URL")
-    JWT_SECRET = os.environ.get("JWT_SECRET")
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
     SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
     GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")

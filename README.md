@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 2 — Database Schema & Migrations** (Stage A, Build Plan §Chunk 2)
+Status: **Chunk 3 — Auth Module (API + Screens)** (Stage A, Build Plan §Chunk 3)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -15,6 +15,9 @@ backend/          Flask API + Celery worker, same codebase, two entry points
     config.py      Env-driven config
     extensions.py  Shared db (SQLAlchemy) / migrate (Flask-Migrate) instances
     celery_app.py  Shared Celery factory (used by worker.py)
+    auth/
+      tokens.py      JWT access/refresh token issuance + decoding
+      decorators.py  @login_required / @role_required route middleware
     models/        One file per table from Design Document §4
       user.py, patient_profile.py, doctor_profile.py, doctor_leave.py,
       appointment.py, symptom_summary.py, visit_note.py,
@@ -22,6 +25,9 @@ backend/          Flask API + Celery worker, same codebase, two entry points
       calendar_event.py
     routes/
       health.py    GET /api/v1/health
+      auth.py      POST /auth/register, /auth/login, /auth/refresh, GET /auth/me
+      doctors.py   GET /doctors/me — role-protected stub proving the
+                   middleware; Chunk 5 replaces this with real CRUD
   migrations/      Alembic migration history (Flask-Migrate)
   wsgi.py          API entrypoint
   worker.py        Worker entrypoint
@@ -31,7 +37,15 @@ backend/          Flask API + Celery worker, same codebase, two entry points
 web/               Next.js app (App Router)
   app/
     layout.tsx
-    page.tsx       Placeholder home page, pings API health check
+    page.tsx       Placeholder home page, pings API health check, links to auth
+    login/page.tsx
+    register/page.tsx
+    patient/page.tsx  Role-gated empty home screens — real content
+    doctor/page.tsx   lands with each portal's later chunk (Frontend
+    admin/page.tsx    Design Document §3)
+  lib/
+    api.ts            Auth API client + session (token) storage
+    useRequireRole.ts  Redirects to /login on missing/mismatched role
 
 .env.example       Every env var the whole project will need
 render.yaml        Render Blueprint: api + worker + Postgres + Redis
@@ -54,10 +68,13 @@ flask db upgrade               # applies migrations/versions/*.py
 python wsgi.py                 # -> http://localhost:5000/api/v1/health
 ```
 
-As of Chunk 2 the backend reads `FLASK_ENV`, `SECRET_KEY`,
-`CORS_ORIGINS`, and `DATABASE_URL`. The rest of `.env.example`
-(Redis, LLM, email, calendar) is reserved for later chunks and safe
-to leave blank.
+As of Chunk 3 the backend reads `FLASK_ENV`, `SECRET_KEY`,
+`CORS_ORIGINS`, `DATABASE_URL`, `JWT_SECRET`,
+`JWT_ACCESS_TOKEN_EXPIRES_MINUTES`, and
+`JWT_REFRESH_TOKEN_EXPIRES_DAYS`. Set a real `JWT_SECRET` locally too
+(the app falls back to `SECRET_KEY` if it's blank, but don't rely on
+that in anything shared). The rest of `.env.example` (Redis, LLM,
+email, calendar) is reserved for later chunks and safe to leave blank.
 
 To generate a new migration after changing a model:
 
@@ -120,3 +137,30 @@ npm run dev                   # -> http://localhost:3000
 - [x] `flask db downgrade` cleanly drops everything back to empty
       and `flask db upgrade` re-creates it — the migration is
       reversible, not just forward-only
+
+## Done-when check (Chunk 3)
+
+- [x] `POST /api/v1/auth/register` with `role: "patient"` creates a
+      `user` row (bcrypt-hashed password) + matching
+      `patient_profile` row, and returns an access + refresh token
+- [x] Registering with `role: "doctor"` creates a `doctor_profile`
+      row instead; `role: "admin"` creates no profile row at all
+      (Design Document §4 — admin is a bare role)
+- [x] `POST /api/v1/auth/login` with the same credentials returns a
+      fresh access + refresh token pair; wrong password returns 401
+      with the standard `{ error: { code, message, details } }` shape
+- [x] `POST /api/v1/auth/refresh` exchanges a valid refresh token for
+      a new access token without re-entering a password
+- [x] `GET /api/v1/auth/me` returns the current user with a valid
+      access token, and 401s with no token / an expired token
+- [x] `GET /api/v1/doctors/me` (the Chunk 3 role-middleware proof
+      route) returns 200 for a doctor's access token and 403 for a
+      patient's or admin's — confirms `@role_required` actually
+      blocks cross-role access, not just documents an intent
+- [x] In the browser: registering as a patient lands on `/patient`;
+      registering as a doctor lands on `/doctor`; logging in
+      redirects the same way — role-aware redirect confirmed for all
+      three roles, not just patient
+- [x] Visiting `/doctor` or `/admin` directly without a session (or
+      with a patient session) redirects to `/login` rather than
+      rendering the page

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 // Chunk 1 scope only: prove the page is live on a public URL and can
@@ -25,6 +26,9 @@ export default function Home() {
       <h1>Healthcare Appointment &amp; Follow-up Manager</h1>
       <p>Repo scaffold is live (Chunk 1).</p>
       <p>API status: {apiStatus}</p>
+      <p>
+        <Link href="/login">Log in</Link> · <Link href="/register">Register</Link>
+      </p>
     </main>
   );
 }

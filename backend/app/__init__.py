@@ -1,11 +1,12 @@
 """
 Flask application factory.
 
-Kept deliberately thin for Chunk 1 (Repo Scaffold & Environment):
-no DB, no auth, no business logic yet — just enough to prove the
-process boots, reads config from the environment, and responds on
-a public URL. Everything else (blueprints for auth, doctors,
-appointments, etc.) gets registered here in later chunks.
+Started deliberately thin for Chunk 1 (Repo Scaffold & Environment):
+no DB, no auth, no business logic — just enough to prove the process
+boots, reads config from the environment, and responds on a public
+URL. Chunk 3 adds the auth blueprint (register/login/refresh) plus a
+role-protected doctors stub; later chunks register their own
+blueprints here the same way.
 """
 from flask import Flask
 from flask_cors import CORS
@@ -31,7 +32,11 @@ def create_app(config_object=None):
     from app import models  # noqa: F401
 
     from app.routes.health import health_bp
+    from app.routes.auth import auth_bp
+    from app.routes.doctors import doctors_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
+    app.register_blueprint(auth_bp, url_prefix="/api/v1")
+    app.register_blueprint(doctors_bp, url_prefix="/api/v1")
 
     return app
