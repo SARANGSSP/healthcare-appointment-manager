@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 5 — Doctor & Admin Profile Management** (Stage B, Build Plan §Chunk 5)
+Status: **Chunk 6 — Doctor Leave Marking (basic)** (Stage B, Build Plan §Chunk 6)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -205,4 +205,13 @@ npm run dev                   # -> http://localhost:3000
 - [x] An admin can create a doctor profile through the UI form (creating user account & doctor profile) and see it appear in the table.
 - [x] An admin can edit full name, specialisation, email, and slot duration via the Edit Doctor modal.
 - [x] An admin can delete a doctor profile with confirm dialog, cleanly cascading to user account.
+
+## Done-when check (Chunk 6)
+
+- [x] Doctor leave REST endpoints (`GET /doctors/<id>/leave`, `POST /doctors/<id>/leave`, `DELETE /doctors/<id>/leave/<leave_id>`) implemented with role authorization (`@login_required`, authenticated doctor or admin).
+- [x] Patient token attempt to mark or delete doctor leave is blocked with `403 Forbidden`.
+- [x] Marking duplicate leave for the same doctor and date returns `409 Conflict`.
+- [x] Doctor Portal on `/doctor` renders practice schedule settings and a leave date marking form.
+- [x] Marked leave dates are listed in the Scheduled Leave table on `/doctor` with real-time remove actions.
+
 

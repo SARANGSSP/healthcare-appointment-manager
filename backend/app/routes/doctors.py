@@ -9,7 +9,9 @@ from flask import Blueprint, g, jsonify, request
 
 from app.auth.decorators import login_required, role_required
 from app.extensions import db
-from app.models import DoctorProfile, User
+from app.models import DoctorLeave, DoctorProfile, User
+from datetime import datetime
+
 
 doctors_bp = Blueprint("doctors", __name__)
 
@@ -205,3 +207,87 @@ def delete_doctor(doctor_id):
     db.session.commit()
 
     return jsonify({"message": "Doctor profile deleted successfully"}), 200
+
+
+def _leave_json(leave):
+    return {
+        "id": leave.id,
+        "doctor_id": leave.doctor_id,
+        "leave_date": leave.leave_date.isoformat(),
+        "reason": leave.reason,
+    }
+
+
+@doctors_bp.get("/doctors/<int:doctor_id>/leave")
+@login_required
+def list_doctor_leave(doctor_id):
+    """Retrieve all leave dates for a doctor."""
+    doc = DoctorProfile.query.get(doctor_id)
+    if not doc:
+        return _error("not_found", "Doctor profile not found", 404)
+    leaves = DoctorLeave.query.filter_by(doctor_id=doctor_id).order_by(DoctorLeave.leave_date.asc()).all()
+    return jsonify([_leave_json(l) for l in leaves]), 200
+
+
+@doctors_bp.post("/doctors/<int:doctor_id>/leave")
+@login_required
+def mark_doctor_leave(doctor_id):
+    """Mark a leave date for a doctor (admin or doctor themselves)."""
+    doc = DoctorProfile.query.get(doctor_id)
+    if not doc:
+        return _error("not_found", "Doctor profile not found", 404)
+
+    current_role = g.current_user["role"]
+    current_user_id = g.current_user["id"]
+    if current_role != "admin" and doc.user_id != current_user_id:
+        return _error("forbidden", "You are not authorized to mark leave for this doctor", 403)
+
+    body = request.get_json(silent=True) or {}
+    leave_date_str = (body.get("leave_date") or "").strip()
+    reason = (body.get("reason") or "").strip() or None
+
+    if not leave_date_str:
+        return _error("validation_error", "Check the highlighted fields", 422, [
+            {"field": "leave_date", "message": "Leave date is required"}
+        ])
+
+    try:
+        leave_date = datetime.strptime(leave_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return _error("validation_error", "Check the highlighted fields", 422, [
+            {"field": "leave_date", "message": "Leave date must be in YYYY-MM-DD format"}
+        ])
+
+    existing = DoctorLeave.query.filter_by(doctor_id=doctor_id, leave_date=leave_date).first()
+    if existing:
+        return _error("leave_exists", "Doctor is already marked on leave for this date", 409)
+
+    leave = DoctorLeave(doctor_id=doctor_id, leave_date=leave_date, reason=reason)
+    db.session.add(leave)
+    db.session.commit()
+
+    return jsonify(_leave_json(leave)), 201
+
+
+@doctors_bp.delete("/doctors/<int:doctor_id>/leave/<int:leave_id>")
+@login_required
+def delete_doctor_leave(doctor_id, leave_id):
+    """Remove a marked leave date."""
+    doc = DoctorProfile.query.get(doctor_id)
+    if not doc:
+        return _error("not_found", "Doctor profile not found", 404)
+
+    current_role = g.current_user["role"]
+    current_user_id = g.current_user["id"]
+    if current_role != "admin" and doc.user_id != current_user_id:
+        return _error("forbidden", "You are not authorized to modify leave for this doctor", 403)
+
+    leave = DoctorLeave.query.filter_by(id=leave_id, doctor_id=doctor_id).first()
+    if not leave:
+        return _error("not_found", "Leave record not found", 404)
+
+    db.session.delete(leave)
+    db.session.commit()
+
+    return jsonify({"message": "Leave date removed successfully"}), 200
+

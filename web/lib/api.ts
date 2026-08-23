@@ -44,6 +44,19 @@ export interface UpdateDoctorInput {
   slot_duration_minutes?: number;
 }
 
+export interface DoctorLeave {
+  id: number;
+  doctor_id: number;
+  leave_date: string;
+  reason: string | null;
+}
+
+export interface MarkLeaveInput {
+  leave_date: string;
+  reason?: string;
+}
+
+
 interface ApiErrorBody {
   error?: {
     code?: string;
@@ -156,3 +169,25 @@ export function deleteDoctor(id: number): Promise<{ message: string }> {
     method: "DELETE",
   });
 }
+
+export function fetchDoctorMe(): Promise<{ role: Role; message: string; doctor: Doctor | null }> {
+  return request<{ role: Role; message: string; doctor: Doctor | null }>("/doctors/me");
+}
+
+export function fetchDoctorLeave(doctorId: number): Promise<DoctorLeave[]> {
+  return request<DoctorLeave[]>(`/doctors/${doctorId}/leave`);
+}
+
+export function markDoctorLeave(doctorId: number, input: MarkLeaveInput): Promise<DoctorLeave> {
+  return request<DoctorLeave>(`/doctors/${doctorId}/leave`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteDoctorLeave(doctorId: number, leaveId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/doctors/${doctorId}/leave/${leaveId}`, {
+    method: "DELETE",
+  });
+}
+
