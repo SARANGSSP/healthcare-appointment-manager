@@ -4,11 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { Button } from "../../components/ui/Button";
+import { Card } from "../../components/ui/Card";
+import { Input } from "../../components/ui/Input";
+import { Toast } from "../../components/ui/Toast";
+import { VitalsLine } from "../../components/ui/VitalsLine";
 import { login, roleHomePath, storeSession } from "../../lib/api";
 
-// Chunk 3 scope: functional, unstyled beyond basics — the shared
-// component library / design tokens land in Chunk 4 and restyle
-// every screen built before it, this one included.
+// Chunk 3 built the flow; Chunk 4 restyles it with the shared
+// component library / design tokens (see the note this comment used
+// to carry) — every screen built before Chunk 4 gets this pass.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -32,43 +37,40 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 420 }}>
-      <h1>Log in</h1>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <label>
-          Email
-          <input
+    <main className="page app-main-narrow">
+      <VitalsLine tone="ink" />
+      <Card>
+        <h1>Log in</h1>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <Input
             type="email"
+            label="Email"
             required
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ display: "block", width: "100%" }}
           />
-        </label>
-        <label>
-          Password
-          <input
+          <Input
             type="password"
+            label="Password"
             required
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ display: "block", width: "100%" }}
           />
-        </label>
-        {error && (
-          <p role="alert" style={{ color: "#D9694F" }}>
-            {error}
-          </p>
-        )}
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Logging in…" : "Log in"}
-        </button>
-      </form>
-      <p>
-        Don&apos;t have an account? <Link href="/register">Register</Link>
-      </p>
+          {error && (
+            <Toast variant="failed" title="Couldn't log in">
+              {error}
+            </Toast>
+          )}
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Logging in…" : "Log in"}
+          </Button>
+        </form>
+        <p style={{ marginTop: "1rem", marginBottom: 0 }}>
+          Don&apos;t have an account? <Link href="/register">Register</Link>
+        </p>
+      </Card>
     </main>
   );
 }

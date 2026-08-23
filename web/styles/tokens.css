@@ -1,0 +1,64 @@
+/*
+ * Design tokens — Frontend Design Document §2.
+ * Named tokens, not a decorative palette (§2.1): ink/paper carry the
+ * everyday UI, sage/amber/coral are reserved for status and never
+ * appear as pure decoration. Consumed as CSS variables so every
+ * component in Chunk 4+ (and every screen after it) reads from one
+ * source of truth instead of hard-coded hex values.
+ */
+:root {
+  /* --- Color (§2.1) --- */
+  --color-ink: #1b2a2e;
+  --color-paper: #f7f5f0;
+  --color-sage: #6b8f71; /* low urgency / confirmed */
+  --color-amber: #c9922b; /* medium urgency / pending */
+  --color-coral: #d9694f; /* high urgency / cancelled / destructive */
+  --color-slate: #5b6b6e; /* secondary text, borders */
+
+  /* Tints used for badge/toast backgrounds — derived, not arbitrary,
+     kept here rather than recomputed per component. */
+  --color-sage-tint: #e7eee8;
+  --color-amber-tint: #f5e9d4;
+  --color-coral-tint: #f7e2dc;
+  --color-ink-tint: #e7e9ea;
+
+  --color-paper-raised: #ffffff;
+  --color-border: #d8d3c7;
+
+  /* --- Typography (§2.2) --- */
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* --- Spacing (§2.3) — 8px base unit --- */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-8: 64px;
+
+  /* --- Layout (§2.3) --- */
+  --content-max-width: 1120px;
+  --breakpoint-mobile: 768px;
+
+  /* --- Radius (§2.3) --- */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 9999px;
+
+  /* --- Elevation (§2.3) — used sparingly: hold countdown + modals only --- */
+  --shadow-elevated: 0 4px 16px rgba(27, 42, 46, 0.12);
+
+  /* --- Motion (§2.5) --- */
+  --motion-fade: 120ms ease;
+  --motion-draw-in: 400ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fade: 0ms;
+    --motion-draw-in: 0ms;
+  }
+}

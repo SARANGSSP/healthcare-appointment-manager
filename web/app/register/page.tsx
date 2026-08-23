@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { Button } from "../../components/ui/Button";
+import { Card } from "../../components/ui/Card";
+import { Input } from "../../components/ui/Input";
+import { Toast } from "../../components/ui/Toast";
+import { VitalsLine } from "../../components/ui/VitalsLine";
 import { register, Role, roleHomePath, storeSession } from "../../lib/api";
 
 export default function RegisterPage() {
@@ -31,62 +36,63 @@ export default function RegisterPage() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 420 }}>
-      <h1>Register</h1>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <label>
-          Full name
-          <input
+    <main className="page app-main-narrow">
+      <VitalsLine tone="ink" />
+      <Card>
+        <h1>Register</h1>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <Input
+            label="Full name"
             required
             autoComplete="name"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            style={{ display: "block", width: "100%" }}
           />
-        </label>
-        <label>
-          Email
-          <input
+          <Input
             type="email"
+            label="Email"
             required
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ display: "block", width: "100%" }}
           />
-        </label>
-        <label>
-          Password
-          <input
+          <Input
             type="password"
+            label="Password"
             required
             minLength={8}
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ display: "block", width: "100%" }}
           />
-        </label>
-        <label>
-          I am a
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} style={{ display: "block", width: "100%" }}>
-            <option value="patient">Patient</option>
-            <option value="doctor">Doctor</option>
-            <option value="admin">Admin</option>
-          </select>
-        </label>
-        {error && (
-          <p role="alert" style={{ color: "#D9694F" }}>
-            {error}
-          </p>
-        )}
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Creating account…" : "Create account"}
-        </button>
-      </form>
-      <p>
-        Already have an account? <Link href="/login">Log in</Link>
-      </p>
+          <div className="field">
+            <label className="field-label" htmlFor="role">
+              I am a
+            </label>
+            <select
+              id="role"
+              className="input"
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+            >
+              <option value="patient">Patient</option>
+              <option value="doctor">Doctor</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          {error && (
+            <Toast variant="failed" title="Couldn't create your account">
+              {error}
+            </Toast>
+          )}
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Creating account…" : "Create account"}
+          </Button>
+        </form>
+        <p style={{ marginTop: "1rem", marginBottom: 0 }}>
+          Already have an account? <Link href="/login">Log in</Link>
+        </p>
+      </Card>
     </main>
   );
 }

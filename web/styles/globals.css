@@ -1,0 +1,491 @@
+@import "./tokens.css";
+
+/*
+ * Base resets + component classes for the shared library (Build Plan
+ * Chunk 4). Plain CSS custom properties rather than a Tailwind theme
+ * (Frontend Design Document §2 allows either) — keeps every color/
+ * spacing/radius decision traceable to a single named token and
+ * avoids adding a build-step dependency this early in the project.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  margin: 0 0 var(--space-2) 0;
+  line-height: 1.2;
+}
+
+a {
+  color: var(--color-ink);
+}
+
+/* Visible keyboard focus ring on every interactive element (§7). */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+.page {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-3);
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: var(--space-3) var(--space-2);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Button                                                            */
+/* ---------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  padding: 0.625rem 1.125rem;
+  cursor: pointer;
+  transition: background-color var(--motion-fade), border-color var(--motion-fade),
+    opacity var(--motion-fade);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Coral is never used on the primary action (Frontend Design Doc §2.1) */
+.btn-primary {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+.btn-primary:hover:not(:disabled) {
+  background: #0f191c;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-ink);
+  border-color: var(--color-slate);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-ink-tint);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-slate);
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-ink-tint);
+}
+
+/* Reserved for destructive actions only (cancel, delete) — coral is
+   load-bearing, per §2.1, not decorative. */
+.btn-destructive {
+  background: var(--color-coral);
+  color: #fff;
+}
+.btn-destructive:hover:not(:disabled) {
+  background: #c1573e;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+.btn-lg {
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* Form fields — Input / TextArea                                    */
+/* ---------------------------------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 100%;
+}
+
+.field-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.field-hint {
+  font-size: 0.8125rem;
+  color: var(--color-slate);
+}
+
+.input,
+.textarea {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-ink);
+  background: var(--color-paper-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.625rem 0.75rem;
+  width: 100%;
+}
+
+.textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--color-slate);
+}
+
+.input[data-invalid="true"],
+.textarea[data-invalid="true"] {
+  border-color: var(--color-coral);
+}
+
+.field-error {
+  font-size: 0.8125rem;
+  color: var(--color-coral);
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- */
+/* Card                                                               */
+/* ---------------------------------------------------------------- */
+.card {
+  background: var(--color-paper-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+}
+
+/* the one place elevation is used ordinarily (§2.3) — hold countdown
+   card + modal dialogs opt in explicitly with this modifier */
+.card-elevated {
+  box-shadow: var(--shadow-elevated);
+  border-color: transparent;
+}
+
+/* ---------------------------------------------------------------- */
+/* Table                                                              */
+/* ---------------------------------------------------------------- */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th {
+  text-align: left;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-slate);
+  background: var(--color-ink-tint);
+  padding: 0.75rem 1rem;
+}
+
+.table td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: var(--color-paper);
+}
+
+.table-row-expanded {
+  background: var(--color-sage-tint) !important;
+}
+
+.table-empty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-slate);
+}
+
+.table-empty-action {
+  margin-top: var(--space-1);
+}
+
+/* ---------------------------------------------------------------- */
+/* Badge — urgency + status, pill shape (§2.3, §5)                   */
+/* Color + text + icon together, never color alone (§7).             */
+/* ---------------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.badge-icon {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.badge-sage {
+  background: var(--color-sage-tint);
+  color: #3f5b44;
+}
+.badge-amber {
+  background: var(--color-amber-tint);
+  color: #7a5a1a;
+}
+.badge-coral {
+  background: var(--color-coral-tint);
+  color: #a1432e;
+}
+.badge-ink {
+  background: var(--color-ink-tint);
+  color: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------- */
+/* Toast                                                              */
+/* ---------------------------------------------------------------- */
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  border-radius: var(--radius-control);
+  padding: 0.875rem 1rem;
+  font-size: 0.9375rem;
+  box-shadow: var(--shadow-elevated);
+  max-width: 420px;
+}
+
+.toast-success {
+  background: var(--color-sage-tint);
+  color: #3f5b44;
+  border: 1px solid var(--color-sage);
+}
+.toast-failed {
+  background: var(--color-coral-tint);
+  color: #a1432e;
+  border: 1px solid var(--color-coral);
+}
+.toast-info {
+  background: var(--color-ink-tint);
+  color: var(--color-ink);
+  border: 1px solid var(--color-slate);
+}
+
+.toast-title {
+  font-weight: 600;
+  margin: 0 0 0.125rem 0;
+}
+
+.toast-body {
+  margin: 0;
+  color: inherit;
+  opacity: 0.9;
+}
+
+/* ---------------------------------------------------------------- */
+/* Vitals line (§2.4) — signature ECG-style section divider          */
+/* ---------------------------------------------------------------- */
+.vitals-line {
+  display: block;
+  width: 100%;
+  height: 24px;
+  color: var(--color-ink);
+}
+
+.vitals-line-sage {
+  color: var(--color-sage);
+}
+.vitals-line-amber {
+  color: var(--color-amber);
+}
+.vitals-line-coral {
+  color: var(--color-coral);
+}
+
+.vitals-line path {
+  stroke-dasharray: 260;
+  stroke-dashoffset: 0;
+}
+
+.vitals-line-animate path {
+  animation: vitals-draw-in var(--motion-draw-in) ease forwards;
+}
+
+@keyframes vitals-draw-in {
+  from {
+    stroke-dashoffset: 260;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* App shell / nav (per portal)                                      */
+/* ---------------------------------------------------------------- */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-paper-raised);
+}
+
+.app-nav-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.app-nav-portal {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-slate);
+}
+
+.app-nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  margin-left: var(--space-4);
+}
+
+.app-nav-link {
+  font-size: 0.9375rem;
+  color: var(--color-slate);
+  text-decoration: none;
+}
+
+.app-nav-link:hover {
+  color: var(--color-ink);
+}
+
+.app-nav-link[data-active="true"] {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+}
+
+/* Patient portal is narrower + linear, one decision at a time (§3.1) */
+.app-main-narrow {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .app-nav-links {
+    gap: var(--space-2);
+    margin-left: var(--space-2);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Style guide only — never used on real screens                     */
+/* ---------------------------------------------------------------- */
+.styleguide-section {
+  margin-bottom: var(--space-6);
+}
+
+.styleguide-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.styleguide-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 140px;
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  font-size: 0.75rem;
+}
+
+.styleguide-swatch-color {
+  width: 100%;
+  height: 64px;
+}
+
+.styleguide-swatch-label {
+  padding: 0.5rem;
+  background: var(--color-paper-raised);
+}

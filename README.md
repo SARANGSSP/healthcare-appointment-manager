@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 3 — Auth Module (API + Screens)** (Stage A, Build Plan §Chunk 3)
+Status: **Chunk 4 — Design Tokens & Shared Component Library** (Stage A, Build Plan §Chunk 4)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -36,13 +36,22 @@ backend/          Flask API + Celery worker, same codebase, two entry points
 
 web/               Next.js app (App Router)
   app/
-    layout.tsx
-    page.tsx       Placeholder home page, pings API health check, links to auth
-    login/page.tsx
+    layout.tsx        Imports styles/globals.css + Design Document §2.2 fonts
+    page.tsx           Placeholder home page, pings API health check, links to auth
+    login/page.tsx      Restyled in Chunk 4 with the shared component library
     register/page.tsx
-    patient/page.tsx  Role-gated empty home screens — real content
-    doctor/page.tsx   lands with each portal's later chunk (Frontend
-    admin/page.tsx    Design Document §3)
+    patient/page.tsx  Role-gated home screens, now wrapped in AppShell —
+    doctor/page.tsx   real content lands with each portal's later chunk
+    admin/page.tsx    (Frontend Design Document §3)
+    styleguide/page.tsx  Chunk 4 "done when": every component, every state,
+                         no real data — visit directly at /styleguide
+  components/
+    ui/    Button, Input, TextArea, Card, Table, Badge (+ Urgency/Status
+           wrappers), Toast, VitalsLine — Frontend Design Document §5
+    shell/ AppShell.tsx — shared shell + per-portal nav (§3.1-§3.3)
+  styles/
+    tokens.css   Color/type/spacing/radius/motion CSS variables (§2)
+    globals.css  Resets + component classes consumed by components/ui
   lib/
     api.ts            Auth API client + session (token) storage
     useRequireRole.ts  Redirects to /login on missing/mismatched role
@@ -164,3 +173,26 @@ npm run dev                   # -> http://localhost:3000
 - [x] Visiting `/doctor` or `/admin` directly without a session (or
       with a patient session) redirects to `/login` rather than
       rendering the page
+
+## Done-when check (Chunk 4)
+
+- [x] `/styleguide` renders every base component (Button, Input,
+      TextArea, Card, Table, Badge, Toast, VitalsLine) in every state
+      listed in Frontend Design Document §5, with no real/fetched
+      data behind it
+- [x] Color, type, and spacing tokens from §2 are wired as CSS
+      variables in `web/styles/tokens.css`, consumed by every
+      component in `web/styles/globals.css` — no hard-coded hex
+      values in component files
+- [x] The vitals-line SVG divider renders standalone (static, all
+      four status tones) and with the one-shot draw-in animation,
+      and respects `prefers-reduced-motion` (§2.5)
+- [x] `AppShell` renders a role-aware nav for all three portals
+      (Patient/Doctor/Admin) with the correct IA per §3.1-§3.3; the
+      patient portal renders narrower/linear per §3.1, Doctor/Admin
+      render full-width
+- [x] Login, register, and all three portal home screens (built in
+      Chunk 3) are restyled through the shared component library —
+      no screen still uses ad hoc inline styles from before Chunk 4
+- [x] `npx tsc --noEmit` and `next build` both pass clean with the
+      new components in place
