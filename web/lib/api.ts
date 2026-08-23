@@ -72,6 +72,35 @@ export interface DoctorAvailability {
   slots: TimeSlot[];
 }
 
+export interface Appointment {
+  id: number;
+  patient_id: number;
+  patient_name: string;
+  doctor_id: number;
+  doctor_name: string;
+  specialisation: string;
+  appt_date: string;
+  slot_start: string;
+  slot_end: string;
+  status: "held" | "confirmed" | "cancelled" | "completed" | "expired" | "leave_cancelled";
+  held_at: string | null;
+  confirmed_at: string | null;
+  ttl_seconds: number;
+  symptoms: string | null;
+}
+
+export interface HoldSlotInput {
+  doctor_id: number;
+  appt_date: string;
+  slot_start: string;
+  slot_end: string;
+}
+
+export interface ConfirmBookingInput {
+  symptoms?: string;
+}
+
+
 
 
 interface ApiErrorBody {
@@ -212,5 +241,24 @@ export function fetchDoctorAvailability(doctorId: number, date?: string): Promis
   const query = date ? `?date=${encodeURIComponent(date)}` : "";
   return request<DoctorAvailability>(`/doctors/${doctorId}/availability${query}`);
 }
+
+export function holdSlot(input: HoldSlotInput): Promise<Appointment> {
+  return request<Appointment>("/appointments/hold", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getHoldStatus(appointmentId: number): Promise<Appointment> {
+  return request<Appointment>(`/appointments/${appointmentId}/hold-status`);
+}
+
+export function confirmBooking(appointmentId: number, input: ConfirmBookingInput): Promise<Appointment> {
+  return request<Appointment>(`/appointments/${appointmentId}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 
 

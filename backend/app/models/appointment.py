@@ -61,7 +61,9 @@ class Appointment(db.Model):
             "slot_start",
             unique=True,
             postgresql_where=db.text("status IN ('held', 'confirmed')"),
+            sqlite_where=db.text("status IN ('held', 'confirmed')"),
         ),
+
         # Design Document §4.1: idx_appt_patient
         db.Index("idx_appt_patient", "patient_id", "appt_date"),
     )

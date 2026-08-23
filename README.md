@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 7 — Availability Search** (Stage C, Build Plan §Chunk 7)
+Status: **Chunk 9 — Booking Confirm & Double-Booking Guarantee** (Stage C, Build Plan §Chunk 9)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -222,6 +222,23 @@ npm run dev                   # -> http://localhost:3000
 - [x] Slots matching `held` or `confirmed` appointments are marked as `taken` while free slots remain `available`.
 - [x] Patient Portal on `/patient` allows filtering doctors by specialisation.
 - [x] Interactive schedule inspector lets patients choose a date and view real-time available vs taken slot chips.
+
+## Done-when check (Chunk 8)
+
+- [x] Slot hold endpoint (`POST /appointments/hold`) acquires Redis NX lock (300s TTL) and inserts an `Appointment` row with `status='held'`.
+- [x] Sweeper function `_sweep_expired_holds()` automatically flips stale holds older than 300s to `expired`, freeing the slot for re-booking.
+- [x] Patient UI displays active slot hold card with live numeric `mm:ss` countdown in IBM Plex Mono font and depleting progress bar.
+- [x] Patient UI displays pre-visit symptom entry textarea during slot hold.
+
+## Done-when check (Chunk 9)
+
+- [x] Booking confirm endpoint (`POST /appointments/<id>/confirm`) transitions appointment status from `held` to `confirmed`.
+- [x] Saves submitted symptoms into `SymptomSummary` with `llm_status='pending'`.
+- [x] Partial unique index `idx_appt_no_double_book` on `(doctor_id, appt_date, slot_start) WHERE status IN ('held', 'confirmed')` acts as authoritative double-booking guard.
+- [x] Concurrent or duplicate booking/hold attempts return `409 Conflict` ("Slot no longer available").
+- [x] Patient UI handles `409 Conflict` gracefully with a friendly toast alert and returns patient cleanly to schedule picker.
+- [x] Successful confirmation triggers sage Vitals Line draw-in animation and renders confirmed appointment summary card.
+
 
 
 
