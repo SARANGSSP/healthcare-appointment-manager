@@ -1,6 +1,6 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 4 — Design Tokens & Shared Component Library** (Stage A, Build Plan §Chunk 4)
+Status: **Chunk 5 — Doctor & Admin Profile Management** (Stage B, Build Plan §Chunk 5)
 
 This README covers only what exists right now. The full README
 (setup guide, API docs, DB schema, LLM prompts, Google Calendar
@@ -196,3 +196,13 @@ npm run dev                   # -> http://localhost:3000
       no screen still uses ad hoc inline styles from before Chunk 4
 - [x] `npx tsc --noEmit` and `next build` both pass clean with the
       new components in place
+
+## Done-when check (Chunk 5)
+
+- [x] Admin CRUD REST endpoints (`GET /doctors`, `GET /doctors/<id>`, `POST /doctors`, `PUT /doctors/<id>`, `DELETE /doctors/<id>`) implemented with role authorization (`@role_required("admin")`).
+- [x] Patient tokens attempt to mutate doctor profiles are blocked with `403 Forbidden`.
+- [x] An admin can view all doctor profiles in the Doctors Data Table on `/admin`.
+- [x] An admin can create a doctor profile through the UI form (creating user account & doctor profile) and see it appear in the table.
+- [x] An admin can edit full name, specialisation, email, and slot duration via the Edit Doctor modal.
+- [x] An admin can delete a doctor profile with confirm dialog, cleanly cascading to user account.
+

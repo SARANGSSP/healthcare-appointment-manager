@@ -1,7 +1,4 @@
-// Chunk 3 scope: register/login/refresh against the auth blueprint,
-// plus simple session storage. Gets a real HTTP wrapper (interceptors,
-// auto-refresh-on-401, etc.) as more endpoints land in later chunks —
-// this stays deliberately small for now.
+// Chunk 3 & Chunk 5: API client for Auth and Doctor CRUD management.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -20,6 +17,33 @@ export interface AuthResponse {
   role: Role;
 }
 
+export interface Doctor {
+  id: number;
+  user_id: number;
+  email: string | null;
+  full_name: string;
+  specialisation: string;
+  working_hours: Record<string, string[]>;
+  slot_duration_minutes: number;
+}
+
+export interface CreateDoctorInput {
+  email: string;
+  password: string;
+  full_name: string;
+  specialisation: string;
+  working_hours?: Record<string, string[]>;
+  slot_duration_minutes?: number;
+}
+
+export interface UpdateDoctorInput {
+  email?: string;
+  full_name?: string;
+  specialisation?: string;
+  working_hours?: Record<string, string[]>;
+  slot_duration_minutes?: number;
+}
+
 interface ApiErrorBody {
   error?: {
     code?: string;
@@ -28,13 +52,51 @@ interface ApiErrorBody {
   };
 }
 
+const ACCESS_TOKEN_KEY = "healthcare_appt.access_token";
+const REFRESH_TOKEN_KEY = "healthcare_appt.refresh_token";
+const ROLE_KEY = "healthcare_appt.role";
+
+export function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function getStoredRole(): Role | null {
+  if (typeof window === "undefined") return null;
+  const role = localStorage.getItem(ROLE_KEY);
+  return role === "patient" || role === "doctor" || role === "admin" ? role : null;
+}
+
+export function storeSession(auth: AuthResponse) {
+  localStorage.setItem(ACCESS_TOKEN_KEY, auth.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, auth.refresh_token);
+  localStorage.setItem(ROLE_KEY, auth.role);
+}
+
+export function clearSession() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(ROLE_KEY);
+}
+
+export function roleHomePath(role: Role): string {
+  return `/${role}`;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> || {}),
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_URL}/api/v1${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
+    headers,
   });
 
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
@@ -66,33 +128,31 @@ export function login(input: { email: string; password: string }): Promise<AuthR
   });
 }
 
-const ACCESS_TOKEN_KEY = "healthcare_appt.access_token";
-const REFRESH_TOKEN_KEY = "healthcare_appt.refresh_token";
-const ROLE_KEY = "healthcare_appt.role";
-
-export function storeSession(auth: AuthResponse) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, auth.access_token);
-  localStorage.setItem(REFRESH_TOKEN_KEY, auth.refresh_token);
-  localStorage.setItem(ROLE_KEY, auth.role);
+export function fetchDoctors(specialisation?: string): Promise<Doctor[]> {
+  const query = specialisation ? `?specialisation=${encodeURIComponent(specialisation)}` : "";
+  return request<Doctor[]>(`/doctors${query}`);
 }
 
-export function clearSession() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.removeItem(ROLE_KEY);
+export function fetchDoctor(id: number): Promise<Doctor> {
+  return request<Doctor>(`/doctors/${id}`);
 }
 
-export function getStoredRole(): Role | null {
-  if (typeof window === "undefined") return null;
-  const role = localStorage.getItem(ROLE_KEY);
-  return role === "patient" || role === "doctor" || role === "admin" ? role : null;
+export function createDoctor(input: CreateDoctorInput): Promise<Doctor> {
+  return request<Doctor>("/doctors", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+export function updateDoctor(id: number, input: UpdateDoctorInput): Promise<Doctor> {
+  return request<Doctor>(`/doctors/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }
 
-export function roleHomePath(role: Role): string {
-  return `/${role}`;
+export function deleteDoctor(id: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/doctors/${id}`, {
+    method: "DELETE",
+  });
 }
