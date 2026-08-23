@@ -1,11 +1,10 @@
 # Healthcare Appointment & Follow-up Manager
 
-Status: **Chunk 1 — Repo Scaffold & Environment** (Stage A, Build Plan §Chunk 1)
+Status: **Chunk 2 — Database Schema & Migrations** (Stage A, Build Plan §Chunk 2)
 
-This README covers only what exists right now: an empty API and an
-empty web page, both runnable locally and deployable to a public URL.
-The full README (setup guide, API docs, DB schema, LLM prompts,
-Google Calendar setup) is assembled in Chunk 22 as each piece lands.
+This README covers only what exists right now. The full README
+(setup guide, API docs, DB schema, LLM prompts, Google Calendar
+setup) is assembled in Chunk 22 as each piece lands.
 
 ## Structure
 
@@ -14,9 +13,16 @@ backend/          Flask API + Celery worker, same codebase, two entry points
   app/
     __init__.py    Flask app factory
     config.py      Env-driven config
+    extensions.py  Shared db (SQLAlchemy) / migrate (Flask-Migrate) instances
     celery_app.py  Shared Celery factory (used by worker.py)
+    models/        One file per table from Design Document §4
+      user.py, patient_profile.py, doctor_profile.py, doctor_leave.py,
+      appointment.py, symptom_summary.py, visit_note.py,
+      prescription_item.py, medication_reminder.py, notification.py,
+      calendar_event.py
     routes/
       health.py    GET /api/v1/health
+  migrations/      Alembic migration history (Flask-Migrate)
   wsgi.py          API entrypoint
   worker.py        Worker entrypoint
   requirements.txt
@@ -39,13 +45,26 @@ render.yaml        Render Blueprint: api + worker + Postgres + Redis
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env      # then trim to what Chunk 1 needs, see below
-python wsgi.py                # -> http://localhost:5000/api/v1/health
+cp ../.env.example .env      # trim to what's needed so far, see below
+
+# Provision a local Postgres database matching DATABASE_URL, e.g.:
+#   createdb healthcare_appt
+
+flask db upgrade               # applies migrations/versions/*.py
+python wsgi.py                 # -> http://localhost:5000/api/v1/health
 ```
 
-For Chunk 1 the backend only reads `FLASK_ENV`, `SECRET_KEY`, and
-`CORS_ORIGINS` — the rest of `.env.example` (DB, Redis, LLM, email,
-calendar) is reserved for later chunks and safe to leave blank.
+As of Chunk 2 the backend reads `FLASK_ENV`, `SECRET_KEY`,
+`CORS_ORIGINS`, and `DATABASE_URL`. The rest of `.env.example`
+(Redis, LLM, email, calendar) is reserved for later chunks and safe
+to leave blank.
+
+To generate a new migration after changing a model:
+
+```bash
+flask db migrate -m "describe the change"
+flask db upgrade
+```
 
 ### Frontend
 
@@ -74,8 +93,30 @@ npm run dev                   # -> http://localhost:3000
 
 ## Done-when check (Chunk 1)
 
-- [ ] `GET /api/v1/health` returns `{"status": "ok", ...}` locally
+- [x] `GET /api/v1/health` returns `{"status": "ok", ...}` locally
 - [ ] Same endpoint responds on the deployed Render/Railway URL
 - [ ] `web/` home page loads locally and on the deployed Vercel URL
 - [ ] Deployed web page's "API status" shows `connected` once
       `NEXT_PUBLIC_API_URL` points at the live API
+
+## Done-when check (Chunk 2)
+
+- [x] `flask db upgrade` runs clean on a fresh database — all 11
+      tables from Design Document §4 created (`user`,
+      `patient_profile`, `doctor_profile`, `doctor_leave`,
+      `appointment`, `symptom_summary`, `visit_note`,
+      `prescription_item`, `medication_reminder`, `notification`,
+      `calendar_event`)
+- [x] All four §4.1 indexes exist, confirmed via `\d appointment` /
+      `\d doctor_leave` / `\d medication_reminder` in psql:
+      `idx_appt_no_double_book` (partial, unique), `idx_appt_patient`,
+      `idx_leave_doctor_date`, `idx_reminder_due`
+- [x] Manual duplicate-insert test in psql: inserting a second
+      `confirmed` (or `held`) appointment for the same
+      `(doctor_id, appt_date, slot_start)` throws a unique-violation;
+      the same slot becomes bookable again once the original row's
+      status is no longer `held`/`confirmed` (e.g. `cancelled`) —
+      confirming the index is genuinely partial, not blanket-unique
+- [x] `flask db downgrade` cleanly drops everything back to empty
+      and `flask db upgrade` re-creates it — the migration is
+      reversible, not just forward-only

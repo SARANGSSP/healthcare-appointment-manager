@@ -11,6 +11,7 @@ from flask import Flask
 from flask_cors import CORS
 
 from app.config import get_config
+from app.extensions import db, migrate
 
 
 def create_app(config_object=None):
@@ -20,6 +21,14 @@ def create_app(config_object=None):
     # Permissive CORS for local/dev; tighten to the deployed web
     # origin via CORS_ORIGINS once the frontend URL is known.
     CORS(app, origins=app.config.get("CORS_ORIGINS", "*"))
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+
+    # Import models so Alembic's autogenerate can see them (they
+    # register themselves on db.Model.metadata as a side effect of
+    # being imported) — see app/models/__init__.py.
+    from app import models  # noqa: F401
 
     from app.routes.health import health_bp
 

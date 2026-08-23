@@ -23,8 +23,14 @@ class Config:
     # "http://localhost:3000,https://your-app.vercel.app"
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
+    # --- Database (Chunk 2) ---
+    DATABASE_URL = os.environ.get(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/healthcare_appt"
+    )
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
     # --- Reserved for upcoming chunks (see .env.example) ---
-    DATABASE_URL = os.environ.get("DATABASE_URL")
     REDIS_URL = os.environ.get("REDIS_URL")
     JWT_SECRET = os.environ.get("JWT_SECRET")
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
