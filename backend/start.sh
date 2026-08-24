@@ -1,14 +1,12 @@
 #!/bin/bash
 # start.sh: Migrate DB, seed admin, then run Flask + Celery in a single Free-tier container
 
-set -e  # Exit immediately if any command fails
-
 echo "==> Running database migrations..."
 flask db upgrade
 
 echo "==> Seeding initial admin user (skipped if already exists)..."
 python - <<'EOF'
-import os, sys
+import os
 from app import create_app, db
 from app.models.user import User
 
@@ -32,5 +30,5 @@ celery -A worker.celery worker --loglevel=info --concurrency=1 &
 echo "==> Starting Celery beat..."
 celery -A worker.celery beat --loglevel=info --scheduler celery.beat:PersistentScheduler &
 
-echo "==> Starting Gunicorn..."
-exec gunicorn wsgi:app
+echo "==> Starting Gunicorn on 0.0.0.0:${PORT:-10000}..."
+exec gunicorn wsgi:app --bind "0.0.0.0:${PORT:-10000}" --workers 1 --timeout 120
