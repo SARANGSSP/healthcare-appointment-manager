@@ -393,7 +393,7 @@ def confirm_booking(appointment_id):
     try:
         from app.services.notifications import enqueue_notification
         recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
-        enqueue_notification(appt.id, "booking_confirmed", recipient=recipient_email)
+        enqueue_notification(appt.id, "confirmation", recipient=recipient_email)
     except Exception:
         pass  # notification failure must not block the booking response
 
@@ -539,11 +539,25 @@ def cancel_appointment(appointment_id):
     appt.status = "cancelled"
     db.session.commit()
 
-    # H4 fix: notify patient of cancellation
+    # Release the Redis slot lock (B9)
+    try:
+        from app.services.locks import release_slot_lock
+        release_slot_lock(appt.doctor_id, appt.appt_date.strftime("%Y-%m-%d"), appt.slot_start.strftime("%H:%M"))
+    except Exception:
+        pass
+
+    # B4 fix: Delete calendar event
+    try:
+        from app.services.calendar import sync_calendar_event
+        sync_calendar_event(appt.id, action="delete")
+    except Exception:
+        pass
+
+    # H4 fix: notify patient of cancellation (B2 aligned)
     try:
         from app.services.notifications import enqueue_notification
         recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
-        enqueue_notification(appt.id, "booking_cancelled", recipient=recipient_email)
+        enqueue_notification(appt.id, "cancellation", recipient=recipient_email)
     except Exception:
         pass
 

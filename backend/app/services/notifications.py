@@ -91,9 +91,9 @@ def _sendgrid_send(notif, api_key: str):
     to_email = getattr(notif, "recipient", None) or "patient@example.com"
 
     subject_map = {
-        "booking_confirmed": "Your appointment is confirmed",
-        "booking_cancelled": "Your appointment has been cancelled",
-        "leave_cancelled": "Your appointment was cancelled (doctor leave)",
+        "confirmation": "Your appointment is confirmed",
+        "cancellation": "Your appointment has been cancelled",
+        "leave_notice": "Your appointment was cancelled (doctor leave)",
         "reminder": "Medication reminder",
     }
     subject = subject_map.get(notif.type, "Healthcare Appointment Manager")
@@ -126,16 +126,31 @@ def _sendgrid_send(notif, api_key: str):
             raise RuntimeError(f"SendGrid responded with HTTP {status}")
 
 
-def retry_failed_notifications():
+def retry_failed_notifications(force=False):
     """
-    Sweeps failed/pending notifications and retries them.
-    Called directly from tests and from tasks.retry_notifications_task.
+    Sweeps failed/pending notifications and retries them, respecting backoff timing unless force=True.
+    Called directly from tests and from tasks.retry_notifications_task (B12).
     """
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    # Backoff windows per retry_count: 0→1 min, 1→5 min, 2→30 min, 3+→60 min
+    BACKOFF_MINUTES = {0: 1, 1: 5, 2: 30}
+
     failed_list = Notification.query.filter(
-        Notification.status.in_(["failed", "pending"])
+        Notification.status.in_(["failed", "pending"]),
+        Notification.retry_count < 5,
     ).all()
 
+    retried = 0
     for notif in failed_list:
+        if not force and notif.last_attempt_at:
+            wait_minutes = BACKOFF_MINUTES.get(notif.retry_count or 0, 60)
+            last = notif.last_attempt_at
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if (now - last).total_seconds() < wait_minutes * 60:
+                continue
         send_notification(notif)
+        retried += 1
 
-    return len(failed_list)
+    return retried

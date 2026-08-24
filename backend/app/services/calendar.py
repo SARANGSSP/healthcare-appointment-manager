@@ -18,11 +18,25 @@ from app.models import CalendarEvent, Appointment
 def sync_calendar_event(appointment_id: int, action: str = "create", access_token: str = None):
     """
     Creates, updates, or deletes a Google Calendar event for an appointment.
-    When GOOGLE_OAUTH_CLIENT_ID / SECRET are set and token is provided, makes real
+    When GOOGLE_OAUTH_CLIENT_ID / SECRET are set and token is available, makes real
     Google Calendar API HTTP calls. Falls back to mock synced status when unset.
     """
     client_id = (current_app.config.get("GOOGLE_OAUTH_CLIENT_ID") if current_app else None) or os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
     client_secret = (current_app.config.get("GOOGLE_OAUTH_CLIENT_SECRET") if current_app else None) or os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+
+    appt = db.session.get(Appointment, appointment_id)
+    if not appt:
+        return None
+
+    # B4 fix: Get persisted token from User profile if not explicitly supplied
+    if not access_token:
+        patient_user = appt.patient.user if (appt.patient and appt.patient.user) else None
+        if patient_user and patient_user.google_access_token:
+            access_token = patient_user.google_access_token
+        else:
+            doctor_user = appt.doctor.user if (appt.doctor and appt.doctor.user) else None
+            if doctor_user and doctor_user.google_access_token:
+                access_token = doctor_user.google_access_token
 
     cal_event = CalendarEvent.query.filter_by(appointment_id=appointment_id).first()
     if not cal_event:
@@ -37,8 +51,7 @@ def sync_calendar_event(appointment_id: int, action: str = "create", access_toke
     if client_id and client_secret and access_token:
         # Real Google Calendar API Call
         try:
-            appt = db.session.get(Appointment, appointment_id)
-            if appt and action != "delete":
+            if action != "delete":
                 url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
                 start_iso = f"{appt.appt_date.strftime('%Y-%m-%d')}T{appt.slot_start.strftime('%H:%M:%S')}Z"
                 end_iso = f"{appt.appt_date.strftime('%Y-%m-%d')}T{appt.slot_end.strftime('%H:%M:%S')}Z"
@@ -63,12 +76,27 @@ def sync_calendar_event(appointment_id: int, action: str = "create", access_toke
                     cal_event.patient_google_event_id = res_data.get("id", cal_event.patient_google_event_id)
                     cal_event.sync_status = "synced"
             elif action == "delete":
+                # B4 fix: Real Google Calendar API DELETE call
+                if cal_event.patient_google_event_id:
+                    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{cal_event.patient_google_event_id}"
+                    req = urllib.request.Request(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                        },
+                        method="DELETE"
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            pass
+                    except Exception:
+                        pass
                 cal_event.sync_status = "synced"
-        except Exception as e:
+        except Exception:
             cal_event.sync_status = "pending"
     else:
         # Mock fallback when GOOGLE_OAUTH_* is unset
-        cal_event.sync_status = "synced" if action != "delete" else "synced"
+        cal_event.sync_status = "synced"
 
     db.session.commit()
     return cal_event

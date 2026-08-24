@@ -96,33 +96,53 @@ def retry_notifications_task():
     Sweeps failed/pending notifications and retries with exponential backoff.
     Scheduled every 60 s by Celery beat (Design Document §9.1 retry schedule: 1 m/5 m/30 m).
     """
-    from datetime import datetime, timezone, timedelta
+    from app.services.notifications import retry_failed_notifications
+    retried = retry_failed_notifications(force=False)
+    return {"retried": retried}
+
+
+# ---------------------------------------------------------------------------
+# B5: Medication reminders sender worker task
+# ---------------------------------------------------------------------------
+
+@shared_task(name="tasks.send_due_reminders_task")
+def send_due_reminders_task():
+    """
+    Polls the database for due MedicationReminders (status == 'pending', scheduled_for <= now)
+    and sends them by enqueuing a notification (B5).
+    """
+    from datetime import datetime, timezone
     from app.extensions import db
-    from app.models import Notification
-    from app.services.notifications import send_notification
+    from app.models import MedicationReminder
+    from app.services.notifications import enqueue_notification
 
     now = datetime.now(timezone.utc)
-    # Backoff windows per retry_count: 0→1 min, 1→5 min, 2→30 min, 3+→60 min
-    BACKOFF_MINUTES = {0: 1, 1: 5, 2: 30}
-
-    candidates = Notification.query.filter(
-        Notification.status.in_(["failed", "pending"]),
-        Notification.retry_count < 5,
+    due_reminders = MedicationReminder.query.filter(
+        MedicationReminder.status == "pending",
+        MedicationReminder.scheduled_for <= now
     ).all()
 
-    retried = 0
-    for notif in candidates:
-        wait_minutes = BACKOFF_MINUTES.get(notif.retry_count or 0, 60)
-        if notif.last_attempt_at:
-            last = notif.last_attempt_at
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            if (now - last).total_seconds() < wait_minutes * 60:
-                continue
-        send_notification(notif)
-        retried += 1
+    sent_count = 0
+    for reminder in due_reminders:
+        try:
+            item = reminder.prescription_item
+            visit_note = item.visit_note if item else None
+            appt = visit_note.appointment if visit_note else None
+            patient = appt.patient if appt else None
+            email = patient.user.email if (patient and patient.user) else ""
 
-    return {"retried": retried}
+            if email and appt:
+                # B2 & B11 aligned type: 'reminder'
+                enqueue_notification(appt.id, "reminder", recipient=email)
+                reminder.status = "sent"
+            else:
+                reminder.status = "failed"
+            sent_count += 1
+        except Exception:
+            reminder.status = "failed"
+
+    db.session.commit()
+    return {"sent_count": sent_count}
 
 
 # ---------------------------------------------------------------------------

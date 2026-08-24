@@ -27,6 +27,12 @@ def sweep_expired_holds():
         if held_at_utc and (now_utc - held_at_utc).total_seconds() > HOLD_TTL_SECONDS:
             appt.status = "expired"
             updated = True
+            # B9: release Redis slot lock
+            try:
+                from app.services.locks import release_slot_lock
+                release_slot_lock(appt.doctor_id, appt.appt_date.strftime("%Y-%m-%d"), appt.slot_start.strftime("%H:%M"))
+            except Exception:
+                pass
     if updated:
         db.session.commit()
 

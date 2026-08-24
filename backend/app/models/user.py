@@ -21,6 +21,9 @@ class User(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
+    # B4 fix: persist OAuth tokens on the User
+    google_access_token = db.Column(db.String(512), nullable=True)
+    google_refresh_token = db.Column(db.String(512), nullable=True)
 
     patient_profile = db.relationship(
         "PatientProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"

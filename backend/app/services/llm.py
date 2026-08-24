@@ -91,14 +91,14 @@ def _extract_json(text):
 def generate_pre_visit_summary(symptoms_text):
     """
     Generates pre-visit urgency triage JSON (Low/Medium/High, chief complaint, 3 suggested questions).
-    Returns dict on success or None on failure/fallback.
+    Returns dict on success or None on failure (B3).
     """
     if not symptoms_text or not symptoms_text.strip():
         return None
 
     api_key = _get_api_key("GEMINI_API_KEY") or _get_api_key("GROQ_API_KEY")
     if not api_key:
-        return _fallback_pre_visit(symptoms_text)
+        return None
 
     prompt = PRE_VISIT_PROMPT.replace("<symptoms>", f"<symptoms>\n{symptoms_text.strip()}\n</symptoms>")
 
@@ -137,7 +137,7 @@ def generate_pre_visit_summary(symptoms_text):
     except Exception:
         pass
 
-    return _fallback_pre_visit(symptoms_text)
+    return None
 
 
 def generate_post_visit_summary(clinical_notes, prescriptions=None):
@@ -153,7 +153,7 @@ def generate_post_visit_summary(clinical_notes, prescriptions=None):
 
     api_key = _get_api_key("GEMINI_API_KEY") or _get_api_key("GROQ_API_KEY")
     if not api_key:
-        return _fallback_post_visit(clinical_notes, prescriptions)
+        return None
 
     prompt = POST_VISIT_PROMPT.replace("<notes>", f"<notes>\n{full_text}\n</notes>")
 
@@ -174,7 +174,7 @@ def generate_post_visit_summary(clinical_notes, prescriptions=None):
     except Exception:
         pass
 
-    return _fallback_post_visit(clinical_notes, prescriptions)
+    return None
 
 
 def _fallback_pre_visit(symptoms_text):

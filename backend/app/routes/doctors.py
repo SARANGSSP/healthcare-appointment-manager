@@ -375,30 +375,44 @@ def mark_doctor_leave(doctor_id):
         active_appts = Appointment.query.filter(
             Appointment.doctor_id == doctor_id,
             Appointment.appt_date == leave_date,
-            Appointment.status.in_(["held", "confirmed"])
+            Appointment.status == "confirmed"
         ).with_for_update().all()
     except Exception:
         # Fallback if DB engine doesn't support with_for_update (e.g. SQLite test)
         active_appts = Appointment.query.filter(
             Appointment.doctor_id == doctor_id,
             Appointment.appt_date == leave_date,
-            Appointment.status.in_(["held", "confirmed"])
+            Appointment.status == "confirmed"
         ).all()
 
     affected_count = len(active_appts)
     for appt in active_appts:
         appt.status = "leave_cancelled"
+        
+        # Release the Redis slot lock (B9)
+        try:
+            from app.services.locks import release_slot_lock
+            release_slot_lock(appt.doctor_id, appt.appt_date.strftime("%Y-%m-%d"), appt.slot_start.strftime("%H:%M"))
+        except Exception:
+            pass
+
+        # B4 fix: Delete calendar event
+        try:
+            from app.services.calendar import sync_calendar_event
+            sync_calendar_event(appt.id, action="delete")
+        except Exception:
+            pass
 
     leave = DoctorLeave(doctor_id=doctor_id, leave_date=leave_date, reason=reason)
     db.session.add(leave)
     db.session.commit()
 
-    # H10 fix: notify patients whose appointments were cancelled due to leave
+    # H10 fix: notify patients whose appointments were cancelled due to leave (B11 / B2 aligned)
     for appt in active_appts:
         try:
             from app.services.notifications import enqueue_notification
             recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
-            enqueue_notification(appt.id, "leave_cancelled", recipient=recipient_email)
+            enqueue_notification(appt.id, "leave_notice", recipient=recipient_email)
         except Exception:
             pass  # notification failure must not fail the leave-marking response
 

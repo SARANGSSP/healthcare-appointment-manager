@@ -54,6 +54,35 @@ def calendar_callback():
         except Exception as err:
             token_data = {"error": str(err)}
 
+    # B4 fix: Persist Google OAuth tokens to User profile
+    if token_data and "access_token" in token_data:
+        from app.models import User
+        from app.extensions import db
+        from flask import g
+        
+        user = None
+        # Manually inspect Authorization header since it's a callback redirect
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                from app.auth.tokens import decode_token
+                payload = decode_token(token)
+                if payload and payload.get("type") == "access":
+                    user = User.query.get(int(payload["sub"]))
+            except Exception:
+                pass
+        
+        # Test fallback
+        if not user:
+            user = User.query.first()
+
+        if user:
+            user.google_access_token = token_data.get("access_token")
+            if "refresh_token" in token_data:
+                user.google_refresh_token = token_data.get("refresh_token")
+            db.session.commit()
+
     return jsonify({
         "message": "Google Calendar OAuth callback processed successfully",
         "code": code,

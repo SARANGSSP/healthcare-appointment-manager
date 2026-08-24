@@ -37,6 +37,10 @@ def create_celery(app):
             "task": "tasks.retry_notifications_task",
             "schedule": 60.0,  # every 60 seconds
         },
+        "send-due-reminders": {
+            "task": "tasks.send_due_reminders_task",
+            "schedule": 60.0,  # every 60 seconds (B5)
+        },
     }
     celery.conf.timezone = "UTC"
 

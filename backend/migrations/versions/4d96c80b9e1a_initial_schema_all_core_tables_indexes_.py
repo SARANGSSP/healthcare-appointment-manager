@@ -24,6 +24,8 @@ def upgrade():
     sa.Column('password_hash', sa.String(length=255), nullable=False),
     sa.Column('role', sa.String(length=20), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('google_access_token', sa.String(length=512), nullable=True),
+    sa.Column('google_refresh_token', sa.String(length=512), nullable=True),
     sa.CheckConstraint("role IN ('patient', 'doctor', 'admin')", name='ck_user_role'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -81,7 +83,8 @@ def upgrade():
     sa.Column('leave_date', sa.Date(), nullable=False),
     sa.Column('reason', sa.String(length=255), nullable=True),
     sa.ForeignKeyConstraint(['doctor_id'], ['doctor_profile.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('doctor_id', 'leave_date', name='uq_doctor_leave_date')
     )
     with op.batch_alter_table('doctor_leave', schema=None) as batch_op:
         batch_op.create_index('idx_leave_doctor_date', ['doctor_id', 'leave_date'], unique=False)
@@ -102,9 +105,11 @@ def upgrade():
     sa.Column('appointment_id', sa.Integer(), nullable=False),
     sa.Column('type', sa.String(length=20), nullable=False),
     sa.Column('channel', sa.String(length=20), nullable=False),
+    sa.Column('recipient', sa.String(length=255), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=False),
     sa.Column('retry_count', sa.Integer(), nullable=False),
     sa.Column('last_attempt_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint("channel = 'email'", name='ck_notification_channel'),
     sa.CheckConstraint("status IN ('pending', 'sent', 'failed', 'permanently_failed')", name='ck_notification_status'),
     sa.CheckConstraint("type IN ('confirmation', 'reminder', 'cancellation', 'leave_notice')", name='ck_notification_type'),
