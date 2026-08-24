@@ -76,13 +76,6 @@ export default function Home() {
             Manage daily schedule, review symptom summary cards, and write patient-friendly clinical summaries.
           </p>
         </Card>
-
-        <Card style={{ padding: "1.25rem" }}>
-          <h3 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>Admin Portal</h3>
-          <p style={{ fontSize: "0.875rem", color: "var(--color-muted)", margin: 0 }}>
-            Track platform health metrics, manage doctor profiles, check leave conflicts, and monitor notification retry queues.
-          </p>
-        </Card>
       </div>
     </main>
   );
