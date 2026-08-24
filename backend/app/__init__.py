@@ -26,6 +26,10 @@ def create_app(config_object=None):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    from app.services.locks import init_redis
+    init_redis(app)
+
+
     # Import models so Alembic's autogenerate can see them (they
     # register themselves on db.Model.metadata as a side effect of
     # being imported) — see app/models/__init__.py.
@@ -35,11 +39,14 @@ def create_app(config_object=None):
     from app.routes.auth import auth_bp
     from app.routes.doctors import doctors_bp
     from app.routes.appointments import appointments_bp
+    from app.routes.calendar import calendar_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1")
     app.register_blueprint(doctors_bp, url_prefix="/api/v1")
     app.register_blueprint(appointments_bp, url_prefix="/api/v1")
+    app.register_blueprint(calendar_bp, url_prefix="/api/v1")
 
     return app
+
 

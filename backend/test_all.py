@@ -151,10 +151,17 @@ def run_master_test_suite():
         retried = retry_failed_notifications()
         print(f"[OK] Notification pipeline processed (Retried jobs: {retried})")
 
-        # Calendar Sync
+        # Calendar Sync & Callback
+        res = client.get("/api/v1/calendar/callback?code=mock_auth_code_123&state=test_state")
+        assert res.status_code == 200
+        assert res.json["code"] == "mock_auth_code_123"
+        assert res.json["synced"] is True
+        print("[OK] Google Calendar OAuth callback route operational")
+
         cal_ev = sync_calendar_event(appt_id, "create")
         assert cal_ev.sync_status == "synced"
         print("[OK] Google Calendar event synced successfully")
+
 
         # Medication Reminders
         reminders = schedule_medication_reminders(completed_data["visit_note"]["prescriptions"][0]["id"])

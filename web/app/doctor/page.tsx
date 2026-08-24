@@ -8,7 +8,8 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/Table";
+import { Table } from "../../components/ui/Table";
+
 import { TextArea } from "../../components/ui/TextArea";
 import { Toast, type ToastVariant } from "../../components/ui/Toast";
 import { VitalsLine } from "../../components/ui/VitalsLine";
@@ -190,13 +191,14 @@ export default function DoctorPortal() {
   const getUrgencyBadge = (urgency?: "Low" | "Medium" | "High") => {
     switch (urgency) {
       case "High":
-        return <Badge variant="coral">HIGH URGENCY</Badge>;
+        return <Badge tone="coral">HIGH URGENCY</Badge>;
       case "Medium":
-        return <Badge variant="amber">MEDIUM URGENCY</Badge>;
+        return <Badge tone="amber">MEDIUM URGENCY</Badge>;
       default:
-        return <Badge variant="sage">LOW URGENCY</Badge>;
+        return <Badge tone="sage">LOW URGENCY</Badge>;
     }
   };
+
 
   if (!ready || loading) return null;
 
@@ -229,7 +231,7 @@ export default function DoctorPortal() {
                 Time-ordered patient queue with AI pre-visit urgency triage
               </p>
             </div>
-            <Badge variant="sage">{queue.length} Patients Scheduled</Badge>
+            <Badge tone="sage">{queue.length} Patients Scheduled</Badge>
           </div>
 
           <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -263,11 +265,12 @@ export default function DoctorPortal() {
 
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       {getUrgencyBadge(appt.symptom_summary?.urgency)}
-                      <Badge variant={appt.status === "completed" ? "sage" : "ink"}>
+                      <Badge tone={appt.status === "completed" ? "sage" : "ink"}>
                         {appt.status.toUpperCase()}
                       </Badge>
                     </div>
                   </div>
+
 
                   {/* Pre-visit AI Summary Card */}
                   {appt.symptom_summary && (
@@ -409,33 +412,36 @@ export default function DoctorPortal() {
 
           <div style={{ marginTop: "2rem" }}>
             <h3>Your Scheduled Leaves</h3>
-            {leaves.length === 0 ? (
-              <p style={{ color: "var(--color-slate)", marginTop: "0.5rem" }}>No leave dates scheduled.</p>
-            ) : (
-              <Table style={{ marginTop: "0.75rem" }}>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead style={{ textAlign: "right" }}>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leaves.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell style={{ fontFamily: "var(--font-mono)" }}>{l.leave_date}</TableCell>
-                      <TableCell>{l.reason || "—"}</TableCell>
-                      <TableCell style={{ textAlign: "right" }}>
-                        <Button size="sm" variant="ghost" onClick={() => handleDeleteLeave(l.id)}>
-                          Remove
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            <Table
+              rows={leaves}
+              rowKey={(l) => l.id}
+              emptyTitle="No leave dates scheduled."
+              columns={[
+                {
+                  key: "date",
+                  header: "Date",
+                  render: (l) => <span style={{ fontFamily: "var(--font-mono)" }}>{l.leave_date}</span>,
+                },
+                {
+                  key: "reason",
+                  header: "Reason",
+                  render: (l) => <span>{l.reason || "—"}</span>,
+                },
+                {
+                  key: "actions",
+                  header: "Action",
+                  render: (l) => (
+                    <div style={{ textAlign: "right" }}>
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteLeave(l.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
+
         </Card>
       </div>
     </AppShell>

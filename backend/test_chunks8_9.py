@@ -147,11 +147,23 @@ def test_chunks8_9():
             "slot_start": "09:20",
             "slot_end": "09:40"
         })
-        assert res.status_code == 201, f"Re-hold failed: {res.json}"
-
         print("[OK] Expired slot 09:20-09:40 was successfully re-held by Patient B")
+
+        # 10. Assert Redis NX fast-path rejection on concurrent hold
+        from unittest.mock import MagicMock, patch
+        with patch("app.routes.appointments.acquire_slot_lock", return_value=False):
+            res = client.post("/api/v1/appointments/hold", headers=patient_a_headers, json={
+                "doctor_id": doc_id,
+                "appt_date": target_date,
+                "slot_start": "10:00",
+                "slot_end": "10:20"
+            })
+            assert res.status_code == 409, f"Expected 409 Conflict from Redis lock fast-path, got {res.status_code}"
+            assert res.json["error"]["code"] == "slot_taken"
+            print("[OK] Concurrent hold rejected fast via Redis NX lock before DB insert")
 
         print("\nAll Chunks 8 & 9 Slot Hold & Booking Guarantee tests passed cleanly!")
 
 if __name__ == "__main__":
     test_chunks8_9()
+

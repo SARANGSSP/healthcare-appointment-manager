@@ -105,12 +105,13 @@ This guarantees at the database level that no two concurrent requests can hold o
 - `POST /api/v1/doctors/<id>/leave`: Marks a leave date for a doctor. Executes `SELECT ... FOR UPDATE` transaction to cascade affected appointments to `leave_cancelled`.
 
 ### Appointments & AI Summaries
-- `POST /api/v1/appointments/hold`: Holds a slot for 300s TTL using Redis NX and DB row insertion.
+- `POST /api/v1/appointments/hold`: Holds a slot for 300s TTL using Redis NX fast-path lock (`lock:doctor:{id}:{date}:{slot}`) and DB row insertion.
 - `GET /api/v1/appointments/<id>/hold-status`: Checks hold status and remaining TTL seconds.
 - `POST /api/v1/appointments/<id>/confirm`: Confirms a held slot, submits symptoms, and triggers Gemini/Groq AI Pre-Visit Triage (`Low`=sage, `Medium`=amber, `High`=coral).
 - `GET /api/v1/appointments/today`: Returns today's consultation queue for the doctor ordered by time.
 - `POST /api/v1/appointments/<id>/visit-notes`: Doctor submits clinical notes & prescription items; triggers Gemini/Groq AI Post-Visit Patient Summary.
 - `DELETE /api/v1/appointments/<id>`: Cancels a held or confirmed appointment and releases the slot.
+- `GET /api/v1/calendar/callback`: Google Calendar OAuth 2.0 authorization code callback endpoint. Exchanges code for tokens when configured, with mock fallback when unset.
 
 ### Admin & System Operations
 - `GET /api/v1/admin/overview`: System metrics dashboard (total bookings, active doctors, patient count, failed notification jobs).
@@ -124,7 +125,7 @@ This guarantees at the database level that no two concurrent requests can hold o
 Run the master test suite validating all 22 chunks end-to-end:
 ```bash
 cd backend
-.\.venv\Scripts\python.exe test_all.py
+python test_all.py
 ```
 Output:
 ```
@@ -145,6 +146,7 @@ Output:
 
 === STAGE 5: Notifications, Calendar & Reminders (Chunks 14, 15, 16) ===
 [OK] Notification pipeline processed (Retried jobs: 0)
+[OK] Google Calendar OAuth callback route operational
 [OK] Google Calendar event synced successfully
 [OK] Scheduled 14 daily medication reminder jobs
 
@@ -158,6 +160,7 @@ Output:
  ALL 22 CHUNKS FULL-STACK VERIFICATION PASSED CLEANLY! 
 =======================================================
 ```
+
 
 ---
 

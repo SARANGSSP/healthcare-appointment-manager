@@ -8,7 +8,8 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/Table";
+import { Table } from "../../components/ui/Table";
+
 import { Toast, type ToastVariant } from "../../components/ui/Toast";
 import { VitalsLine } from "../../components/ui/VitalsLine";
 import {
@@ -187,7 +188,8 @@ export default function AdminPortal() {
     setEditDoctor(doc);
     setFullName(doc.full_name);
     setSpecialisation(doc.specialisation);
-    setEmail(doc.email);
+    setEmail(doc.email || "");
+
     setSlotDuration(doc.slot_duration_minutes);
   };
 
@@ -262,81 +264,102 @@ export default function AdminPortal() {
           <h2>Doctor Profiles</h2>
           {loadingDoctors ? (
             <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>Loading doctor profiles...</p>
-          ) : doctors.length === 0 ? (
-            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>
-              No doctor profiles configured yet. Click "+ Add Doctor Profile" to get started.
-            </p>
           ) : (
-            <Table style={{ marginTop: "1rem" }}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Doctor Name</TableHead>
-                  <TableHead>Specialisation</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Slot Duration</TableHead>
-                  <TableHead style={{ textAlign: "right" }}>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {doctors.map((doc) => (
-                  <TableRow key={doc.id}>
-                    <TableCell style={{ fontWeight: 600 }}>{doc.full_name}</TableCell>
-                    <TableCell><Badge variant="sage">{doc.specialisation}</Badge></TableCell>
-                    <TableCell style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem" }}>{doc.email}</TableCell>
-                    <TableCell style={{ fontFamily: "var(--font-mono)" }}>{doc.slot_duration_minutes} min</TableCell>
-                    <TableCell style={{ textAlign: "right" }}>
+            <Table
+              rows={doctors}
+              rowKey={(doc) => doc.id}
+              emptyTitle="No doctor profiles configured yet."
+              columns={[
+                {
+                  key: "name",
+                  header: "Doctor Name",
+                  render: (doc) => <span style={{ fontWeight: 600 }}>{doc.full_name}</span>,
+                },
+                {
+                  key: "specialisation",
+                  header: "Specialisation",
+                  render: (doc) => <Badge tone="sage">{doc.specialisation}</Badge>,
+                },
+                {
+                  key: "email",
+                  header: "Email",
+                  render: (doc) => (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem" }}>{doc.email}</span>
+                  ),
+                },
+                {
+                  key: "slot_duration",
+                  header: "Slot Duration",
+                  render: (doc) => (
+                    <span style={{ fontFamily: "var(--font-mono)" }}>{doc.slot_duration_minutes} min</span>
+                  ),
+                },
+                {
+                  key: "actions",
+                  header: "Actions",
+                  render: (doc) => (
+                    <div style={{ textAlign: "right" }}>
                       <Button size="sm" variant="secondary" onClick={() => openEditModal(doc)} style={{ marginRight: "0.5rem" }}>
                         Edit
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => setDeleteDoctorId(doc.id)}>
                         Delete
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           )}
         </Card>
 
         {/* NOTIFICATION MONITORING TABLE (Chunk 14) */}
         <Card>
           <h2>System Notification Delivery Logs</h2>
-          {notifications.length === 0 ? (
-            <p style={{ color: "var(--color-slate)", marginTop: "0.5rem" }}>No transactional notifications logged yet.</p>
-          ) : (
-            <Table style={{ marginTop: "1rem" }}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Notification Type</TableHead>
-                  <TableHead>Channel</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Retries</TableHead>
-                  <TableHead style={{ textAlign: "right" }}>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {notifications.map((n) => (
-                  <TableRow key={n.id}>
-                    <TableCell style={{ fontWeight: 600 }}>{n.type}</TableCell>
-                    <TableCell style={{ textTransform: "uppercase", fontSize: "0.8125rem" }}>{n.channel}</TableCell>
-                    <TableCell>
-                      <Badge variant={n.status === "sent" ? "sage" : n.status.includes("failed") ? "coral" : "amber"}>
-                        {n.status.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell style={{ fontFamily: "var(--font-mono)" }}>{n.retry_count} / 5</TableCell>
-                    <TableCell style={{ textAlign: "right" }}>
-                      <Button size="sm" variant="ghost" onClick={() => handleRetryNotification(n.id)}>
-                        Retry Job
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <Table
+            rows={notifications}
+            rowKey={(n) => n.id}
+            emptyTitle="No transactional notifications logged yet."
+            columns={[
+              {
+                key: "type",
+                header: "Notification Type",
+                render: (n) => <span style={{ fontWeight: 600 }}>{n.type}</span>,
+              },
+              {
+                key: "channel",
+                header: "Channel",
+                render: (n) => <span style={{ textTransform: "uppercase", fontSize: "0.8125rem" }}>{n.channel}</span>,
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (n) => (
+                  <Badge tone={n.status === "sent" ? "sage" : n.status.includes("failed") ? "coral" : "amber"}>
+                    {n.status.toUpperCase()}
+                  </Badge>
+                ),
+              },
+              {
+                key: "retries",
+                header: "Retries",
+                render: (n) => <span style={{ fontFamily: "var(--font-mono)" }}>{n.retry_count} / 5</span>,
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                render: (n) => (
+                  <div style={{ textAlign: "right" }}>
+                    <Button size="sm" variant="ghost" onClick={() => handleRetryNotification(n.id)}>
+                      Retry Job
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </Card>
+
 
         {/* ADD DOCTOR MODAL */}
         {showAddModal && (

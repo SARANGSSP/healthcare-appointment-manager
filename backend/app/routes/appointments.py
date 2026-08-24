@@ -12,8 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.decorators import login_required, role_required
 from app.config import Config
 from app.extensions import db
-from app.models import Appointment, DoctorLeave, DoctorProfile, PatientProfile, PrescriptionItem, SymptomSummary, User, VisitNote
+from app.models import Appointment, DoctorLeave, DoctorProfile, PatientProfile, PrescriptionItem, SymptomSummary, User, VisitNote, Notification
+
 from app.services.llm import generate_post_visit_summary, generate_pre_visit_summary
+from app.services.locks import acquire_slot_lock
 
 appointments_bp = Blueprint("appointments", __name__)
 
@@ -208,12 +210,16 @@ def hold_slot():
     if leave:
         return _error("doctor_on_leave", "Doctor is on leave on this date", 409)
 
+    if not acquire_slot_lock(doctor_id, date_str, slot_start_str, request_id=str(user_id)):
+        return _error("slot_taken", "This slot is no longer available. Please select another slot.", 409)
+
     existing_active = Appointment.query.filter(
         Appointment.doctor_id == doctor_id,
         Appointment.appt_date == target_date,
         Appointment.slot_start == start_time,
         Appointment.status.in_(["held", "confirmed"])
     ).first()
+
 
     if existing_active:
         return _error("slot_taken", "This slot is no longer available. Please select another slot.", 409)

@@ -1,59 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { AppShell } from "../../components/shell/AppShell";
-import { Badge } from "../../components/ui/Badge";
-import { Button } from "../../components/ui/Button";
-import { Card } from "../../components/ui/Card";
-import { Input } from "../../components/ui/Input";
-import { TextArea } from "../../components/ui/TextArea";
-import { Toast, type ToastVariant } from "../../components/ui/Toast";
-import { VitalsLine } from "../../components/ui/VitalsLine";
+import { AppShell } from "../../../components/shell/AppShell";
+import { Badge } from "../../../components/ui/Badge";
+import { Button } from "../../../components/ui/Button";
+import { Card } from "../../../components/ui/Card";
+import { Input } from "../../../components/ui/Input";
+import { Toast, type ToastVariant } from "../../../components/ui/Toast";
+import { VitalsLine } from "../../../components/ui/VitalsLine";
 import {
-  cancelAppointment,
   clearSession,
-  confirmBooking,
   fetchDoctorAvailability,
   fetchDoctors,
   holdSlot,
-  type Appointment,
   type Doctor,
   type DoctorAvailability,
   type TimeSlot,
-} from "../../lib/api";
-import { useRequireRole } from "../../lib/useRequireRole";
+} from "../../../lib/api";
+import { useRequireRole } from "../../../lib/useRequireRole";
 
-export default function PatientHome() {
+export default function PatientSearchPage() {
   const ready = useRequireRole("patient");
   const router = useRouter();
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(true);
-
-  // Search filter state
   const [specialisationFilter, setSpecialisationFilter] = useState("");
-
-  // Selected doctor and availability state
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
   const [availability, setAvailability] = useState<DoctorAvailability | null>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
-
-  // Hold & Booking flow state
-  const [heldAppointment, setHeldAppointment] = useState<Appointment | null>(null);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(300);
   const [holdingSlot, setHoldingSlot] = useState(false);
-  const [symptomsText, setSymptomsText] = useState("");
-  const [confirming, setConfirming] = useState(false);
 
-  // Active or Confirmed booking state
-  const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
-
-  // Toast state
   const [toast, setToast] = useState<{
     variant: ToastVariant;
     title: string;
@@ -107,36 +89,29 @@ export default function PatientHome() {
 
   const handleSelectDoctor = (doc: Doctor) => {
     setSelectedDoctor(doc);
-    setHeldAppointment(null);
-    setConfirmedAppointment(null);
     loadAvailability(doc.id, selectedDate);
   };
 
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
-    setHeldAppointment(null);
-    setConfirmedAppointment(null);
     if (selectedDoctor) {
       loadAvailability(selectedDoctor.id, newDate);
     }
   };
 
-  // Hold slot handler
   const handleSlotClick = async (slot: TimeSlot) => {
     if (!selectedDoctor || slot.status !== "available" || holdingSlot) return;
 
     try {
       setHoldingSlot(true);
-      const appt = await holdSlot({
+      await holdSlot({
         doctor_id: selectedDoctor.id,
         appt_date: selectedDate,
         slot_start: slot.start_time,
         slot_end: slot.end_time,
       });
-      setHeldAppointment(appt);
-      setRemainingSeconds(appt.ttl_seconds || 300);
-      setSymptomsText("");
       showToast("info", "Slot held", `Slot ${slot.start_time}–${slot.end_time} is held for 5 minutes.`);
+      router.push("/patient");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Slot no longer available";
       showToast("failed", "Slot unavailable", msg);
@@ -144,69 +119,6 @@ export default function PatientHome() {
     } finally {
       setHoldingSlot(false);
     }
-  };
-
-  // Live 5-minute countdown timer effect
-  useEffect(() => {
-    if (!heldAppointment || heldAppointment.status !== "held") return;
-
-    const timer = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setHeldAppointment(null);
-          showToast("failed", "Hold expired", "Your slot hold has expired. Please select the slot again.");
-          if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [heldAppointment, selectedDoctor, selectedDate, loadAvailability]);
-
-  // Confirm booking handler
-  const handleConfirmSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!heldAppointment) return;
-
-    try {
-      setConfirming(true);
-      const confirmed = await confirmBooking(heldAppointment.id, {
-        symptoms: symptomsText.trim() || undefined,
-      });
-      setConfirmedAppointment(confirmed);
-      setHeldAppointment(null);
-      showToast("success", "Appointment confirmed", `Your appointment with Dr. ${confirmed.doctor_name} is confirmed!`);
-      if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to confirm appointment";
-      showToast("failed", "Booking failed", msg);
-      setHeldAppointment(null);
-      if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
-    } finally {
-      setConfirming(false);
-    }
-  };
-
-  // Cancel appointment handler (Chunk 10)
-  const handleCancelClick = async (apptId: number) => {
-    try {
-      await cancelAppointment(apptId);
-      showToast("info", "Appointment Cancelled", "Your appointment has been cancelled and the slot is released.");
-      setConfirmedAppointment(null);
-      if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to cancel appointment";
-      showToast("failed", "Cancellation failed", msg);
-    }
-  };
-
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
   if (!ready) return null;
@@ -224,79 +136,14 @@ export default function PatientHome() {
         {toast && <Toast variant={toast.variant} title={toast.title}>{toast.body}</Toast>}
 
         <div>
-          <h1>Healthcare Appointments</h1>
+          <h1>Doctor Search & Availability</h1>
           <p style={{ color: "var(--color-slate)", margin: 0 }}>
-            Find a doctor, select an available slot, and manage your consultation.
+            Search doctors by specialisation and inspect real-time schedule availability.
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate={Boolean(confirmedAppointment)} />
+        <VitalsLine tone="sage" animate />
 
-        {/* Confirmed Appointment Banner Card & Post-Visit Summary (Chunk 10 & 13) */}
-        {confirmedAppointment && (
-          <Card style={{ borderColor: "var(--color-sage)", background: "var(--color-sage-tint)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <Badge tone={confirmedAppointment.status === "completed" ? "sage" : "sage"}>
-
-                  {confirmedAppointment.status.toUpperCase()}
-                </Badge>
-                <strong style={{ color: "#3f5b44", fontSize: "1.125rem" }}>
-                  Appointment Summary
-                </strong>
-              </div>
-
-              <Button size="sm" variant="ghost" onClick={() => handleCancelClick(confirmedAppointment.id)}>
-                Cancel Appointment
-              </Button>
-            </div>
-
-            <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              <p style={{ margin: 0 }}>
-                <strong>Doctor:</strong> Dr. {confirmedAppointment.doctor_name} ({confirmedAppointment.specialisation})
-              </p>
-              <p style={{ margin: 0 }}>
-                <strong>Date & Time:</strong> {confirmedAppointment.appt_date} at{" "}
-                <span style={{ fontFamily: "var(--font-mono)" }}>
-                  {confirmedAppointment.slot_start} – {confirmedAppointment.slot_end}
-                </span>
-              </p>
-            </div>
-
-            {/* Post-Visit Patient-Friendly AI Summary & Medication Schedule */}
-            {confirmedAppointment.visit_note && (
-              <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border)" }}>
-                <strong style={{ color: "var(--color-ink)", display: "block" }}>Patient Care Summary</strong>
-                <p style={{ fontSize: "0.9375rem", marginTop: "0.25rem" }}>
-                  {confirmedAppointment.visit_note.patient_friendly_summary || confirmedAppointment.visit_note.clinical_notes}
-                </p>
-
-                {confirmedAppointment.visit_note.prescriptions.length > 0 && (
-                  <div style={{ marginTop: "0.75rem" }}>
-                    <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)", display: "block" }}>
-                      Prescription Medication Schedule:
-                    </span>
-                    <ul style={{ margin: "0.25rem 0 0 1.25rem", padding: 0, fontSize: "0.875rem" }}>
-                      {confirmedAppointment.visit_note.prescriptions.map((p, idx) => (
-                        <li key={idx}>
-                          <strong>{p.medication_name}</strong> ({p.dosage}) — {p.frequency} for {p.duration_days} days
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginTop: "1rem" }}>
-              <Button size="sm" variant="secondary" onClick={() => setConfirmedAppointment(null)}>
-                Book Another Appointment
-              </Button>
-            </div>
-          </Card>
-        )}
-
-        {/* Doctor Search Card */}
         <Card>
           <h2>Search Doctors</h2>
           <div style={{ marginTop: "0.75rem" }}>
@@ -361,8 +208,7 @@ export default function PatientHome() {
           </div>
         </Card>
 
-        {/* Selected Doctor Schedule & Slot Picker */}
-        {selectedDoctor && !heldAppointment && (
+        {selectedDoctor && (
           <Card>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div>
@@ -408,7 +254,6 @@ export default function PatientHome() {
                     <Badge tone="sage">
                       {availability?.slots.filter((s) => s.status === "available").length || 0} Slots Available
                     </Badge>
-
                     <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)" }}>
                       Click any available slot to hold it for 5 minutes
                     </span>
@@ -453,84 +298,6 @@ export default function PatientHome() {
                 </div>
               )}
             </div>
-          </Card>
-        )}
-
-        {/* Slot Hold & Symptom Form Card */}
-        {heldAppointment && selectedDoctor && (
-          <Card className="card-elevated" style={{ borderColor: remainingSeconds < 60 ? "var(--color-coral)" : "var(--color-ink)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-              <div>
-                <h2>Slot Held: {heldAppointment.slot_start} – {heldAppointment.slot_end}</h2>
-                <p style={{ fontSize: "0.875rem", color: "var(--color-slate)", margin: 0 }}>
-                  Doctor: {selectedDoctor.full_name} | Date: {heldAppointment.appt_date}
-                </p>
-              </div>
-
-              {/* IBM Plex Mono Live Countdown */}
-              <div style={{ textAlign: "right" }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", display: "block" }}>
-                  Time remaining to confirm
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "1.5rem",
-                    fontWeight: 700,
-                    color: remainingSeconds < 60 ? "var(--color-coral)" : "var(--color-ink)",
-                  }}
-                >
-                  {formatTime(remainingSeconds)}
-                </span>
-              </div>
-            </div>
-
-            {/* Depleting Progress Bar */}
-            <div
-              style={{
-                width: "100%",
-                height: "6px",
-                background: "var(--color-paper)",
-                borderRadius: "var(--radius-pill)",
-                overflow: "hidden",
-                margin: "1rem 0",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: `${(remainingSeconds / 300) * 100}%`,
-                  background: remainingSeconds < 60 ? "var(--color-coral)" : "var(--color-sage)",
-                  transition: "width 1s linear, background-color 0.3s ease",
-                }}
-              />
-            </div>
-
-            <form onSubmit={handleConfirmSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <TextArea
-                label="Tell us what's going on (Symptoms / Reason for Visit)"
-                placeholder="e.g. Chest pain for 2 days, mild fever..."
-                value={symptomsText}
-                onChange={(e) => setSymptomsText(e.target.value)}
-                hint="Shared with the doctor before your consultation to generate a pre-visit summary."
-              />
-
-              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setHeldAppointment(null);
-                    if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
-                  }}
-                >
-                  Release Slot
-                </Button>
-                <Button type="submit" variant="primary" disabled={confirming}>
-                  {confirming ? "Confirming..." : "Confirm Appointment"}
-                </Button>
-              </div>
-            </form>
           </Card>
         )}
       </div>
