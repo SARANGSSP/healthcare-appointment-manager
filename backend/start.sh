@@ -6,7 +6,7 @@ flask db upgrade
 
 echo "==> Seeding initial admin user (skipped if already exists)..."
 python - <<'EOF'
-import os
+import os, bcrypt
 from app import create_app, db
 from app.models.user import User
 
@@ -15,8 +15,8 @@ with app.app_context():
     if not User.query.filter_by(role='admin').first():
         admin_email = os.environ.get('ADMIN_EMAIL', 'admin@example.com')
         admin_password = os.environ.get('ADMIN_PASSWORD', 'changeme123')
-        u = User(name='Admin', email=admin_email, role='admin')
-        u.set_password(admin_password)
+        password_hash = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        u = User(email=admin_email, password_hash=password_hash, role='admin')
         db.session.add(u)
         db.session.commit()
         print(f"Admin created: {admin_email}")

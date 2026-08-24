@@ -24,9 +24,10 @@ def seed_admin():
     """
     One-time admin seed endpoint. Protected by SEED_SECRET env var.
     POST /api/v1/seed-admin
-    Body: { "secret": "<SEED_SECRET>", "email": "...", "password": "...", "name": "..." }
+    Body: { "secret": "<SEED_SECRET>", "email": "...", "password": "..." }
     """
     import os
+    import bcrypt
     from app.models.user import User
 
     seed_secret = os.environ.get("SEED_SECRET", "")
@@ -39,14 +40,13 @@ def seed_admin():
 
     email = data.get("email", "admin@example.com")
     password = data.get("password", "changeme123")
-    name = data.get("name", "Admin")
 
     existing = User.query.filter_by(email=email).first()
     if existing:
         return jsonify({"message": f"User {email} already exists", "role": existing.role}), 200
 
-    u = User(name=name, email=email, role="admin")
-    u.set_password(password)
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    u = User(email=email, password_hash=password_hash, role="admin")
     db.session.add(u)
     db.session.commit()
     return jsonify({"message": f"Admin created: {email}"}), 201
