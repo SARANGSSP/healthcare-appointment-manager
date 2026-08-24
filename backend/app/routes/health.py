@@ -52,6 +52,39 @@ def seed_admin():
     return jsonify({"message": f"Admin created: {email}"}), 201
 
 
+@health_bp.post("/reset-password")
+def reset_password():
+    """
+    Emergency password reset. Protected by SEED_SECRET.
+    POST /api/v1/reset-password
+    Body: { "secret": "<SEED_SECRET>", "email": "...", "new_password": "..." }
+    """
+    import os
+    import bcrypt
+    from app.models.user import User
+
+    seed_secret = os.environ.get("SEED_SECRET", "")
+    if not seed_secret:
+        return jsonify({"error": "SEED_SECRET not configured"}), 403
+
+    data = request.get_json(silent=True) or {}
+    if data.get("secret") != seed_secret:
+        return jsonify({"error": "Invalid secret"}), 403
+
+    email = data.get("email")
+    new_password = data.get("new_password")
+    if not email or not new_password:
+        return jsonify({"error": "email and new_password required"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": f"User {email} not found"}), 404
+
+    user.password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    db.session.commit()
+    return jsonify({"message": f"Password reset for {email}"}), 200
+
+
 @health_bp.get("/admin/overview")
 @login_required
 @role_required("admin")
