@@ -1,8 +1,9 @@
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from app.auth.decorators import login_required, role_required
 from app.models import Appointment, DoctorProfile, Notification, PatientProfile
 from app.services.notifications import send_notification
+from app.extensions import db
 
 health_bp = Blueprint("health", __name__)
 
@@ -16,6 +17,39 @@ def health():
             "env": current_app.config.get("ENV", "unknown"),
         }
     )
+
+
+@health_bp.post("/seed-admin")
+def seed_admin():
+    """
+    One-time admin seed endpoint. Protected by SEED_SECRET env var.
+    POST /api/v1/seed-admin
+    Body: { "secret": "<SEED_SECRET>", "email": "...", "password": "...", "name": "..." }
+    """
+    import os
+    from app.models.user import User
+
+    seed_secret = os.environ.get("SEED_SECRET", "")
+    if not seed_secret:
+        return jsonify({"error": "SEED_SECRET not configured on server"}), 403
+
+    data = request.get_json(silent=True) or {}
+    if data.get("secret") != seed_secret:
+        return jsonify({"error": "Invalid secret"}), 403
+
+    email = data.get("email", "admin@example.com")
+    password = data.get("password", "changeme123")
+    name = data.get("name", "Admin")
+
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        return jsonify({"message": f"User {email} already exists", "role": existing.role}), 200
+
+    u = User(name=name, email=email, role="admin")
+    u.set_password(password)
+    db.session.add(u)
+    db.session.commit()
+    return jsonify({"message": f"Admin created: {email}"}), 201
 
 
 @health_bp.get("/admin/overview")
