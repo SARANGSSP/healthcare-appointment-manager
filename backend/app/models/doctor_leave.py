@@ -16,6 +16,8 @@ class DoctorLeave(db.Model):
     __table_args__ = (
         # Design Document §4.1: idx_leave_doctor_date
         db.Index("idx_leave_doctor_date", "doctor_id", "leave_date"),
+        # M4 fix: enforce uniqueness at DB level to eliminate TOCTOU race
+        db.UniqueConstraint("doctor_id", "leave_date", name="uq_doctor_leave_date"),
     )
 
     def __repr__(self):

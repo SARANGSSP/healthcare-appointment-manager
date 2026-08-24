@@ -7,12 +7,13 @@ the Flask app context here — rather than building it standalone —
 means tasks added in later chunks (email, calendar, LLM jobs) can
 use app.config and Flask extensions without re-wiring anything.
 
-No real tasks yet: Chunk 12 (Stage D) is the first chunk that
-actually needs the queue, at which point this becomes the shared
-broker/backend for Reminder, Email Retry, and Calendar Sync workers
-(Design Document §2.2).
+H1/H3/H8 fix: beat_schedule now registers three periodic tasks:
+  - sweep-expired-holds     → every 30 s  (H8)
+  - retry-failed-notifs     → every 60 s  (H3)
+  (LLM tasks are triggered on-demand via .delay(), not beat)
 """
 from celery import Celery
+from celery.schedules import crontab
 
 
 def create_celery(app):
@@ -22,6 +23,22 @@ def create_celery(app):
         backend=app.config.get("REDIS_URL", "redis://localhost:6379/0"),
     )
     celery.conf.update(app.config)
+
+    # Auto-discover tasks in app/tasks.py
+    celery.autodiscover_tasks(["app"])
+
+    # H8 / H3: periodic beat schedule
+    celery.conf.beat_schedule = {
+        "sweep-expired-holds": {
+            "task": "tasks.sweep_expired_holds_task",
+            "schedule": 30.0,  # every 30 seconds
+        },
+        "retry-failed-notifications": {
+            "task": "tasks.retry_notifications_task",
+            "schedule": 60.0,  # every 60 seconds
+        },
+    }
+    celery.conf.timezone = "UTC"
 
     class ContextTask(celery.Task):
         def __call__(self, *args, **kwargs):

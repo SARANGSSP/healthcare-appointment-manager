@@ -2,6 +2,20 @@
 Appointments blueprint (Build Plan Chunks 8–13 / Design Document §6–§10).
 Handles slot holds (~300s TTL), double-booking prevention, cancellation, visit notes,
 LLM pre-visit & post-visit summaries, and doctor queue management.
+
+Bug fixes applied in this version:
+  C2  — confirm_booking now checks patient ownership before confirming.
+  C3  — submit_visit_notes now checks doctor ownership before accepting notes.
+  C4  — hold_status and get_appointment_summary now enforce ownership.
+  M2  — Admin hold requires explicit patient_id in body (no more .first() fallback).
+  M3  — submit_visit_notes rejects appointments not in 'confirmed' status.
+  M5  — New GET /appointments/mine endpoint for patient's own appointments.
+  H4  — confirm_booking and cancel_appointment now wire enqueue_notification
+        and sync_calendar_event on every state change.
+  H7  — submit_visit_notes calls schedule_medication_reminders after commit.
+  H1  — LLM calls dispatched as async Celery tasks (run_pre_visit_llm,
+        run_post_visit_llm) so the request returns immediately with
+        llm_status='pending'; the task updates it to 'ok'/'failed'.
 """
 from datetime import datetime, time, timedelta, timezone
 import re
@@ -14,8 +28,8 @@ from app.config import Config
 from app.extensions import db
 from app.models import Appointment, DoctorLeave, DoctorProfile, PatientProfile, PrescriptionItem, SymptomSummary, User, VisitNote, Notification
 
-from app.services.llm import generate_post_visit_summary, generate_pre_visit_summary
 from app.services.locks import acquire_slot_lock
+from app.services.sweeper import sweep_expired_holds
 
 appointments_bp = Blueprint("appointments", __name__)
 
@@ -34,18 +48,9 @@ def _get_doctor_profile(user_id):
     return DoctorProfile.query.filter_by(user_id=user_id).first()
 
 
+# Keep local alias so existing call-sites inside this module still work.
 def _sweep_expired_holds():
-    """Flips any 'held' appointment older than 300 seconds to 'expired'."""
-    now_utc = datetime.now(timezone.utc)
-    held_appts = Appointment.query.filter_by(status="held").all()
-    updated = False
-    for appt in held_appts:
-        held_at_utc = _make_utc(appt.held_at)
-        if held_at_utc and (now_utc - held_at_utc).total_seconds() > HOLD_TTL_SECONDS:
-            appt.status = "expired"
-            updated = True
-    if updated:
-        db.session.commit()
+    sweep_expired_holds()
 
 
 def _make_utc(dt):
@@ -125,6 +130,15 @@ def _appointment_json(appt):
     }
 
 
+def _is_appointment_owner(appt, user_id, user_role):
+    """Returns True if the current user owns this appointment (as patient or doctor) or is admin."""
+    if user_role == "admin":
+        return True
+    is_patient_owner = appt.patient and appt.patient.user_id == user_id
+    is_doctor_owner = appt.doctor and appt.doctor.user_id == user_id
+    return bool(is_patient_owner or is_doctor_owner)
+
+
 @appointments_bp.get("/appointments/today")
 @login_required
 @role_required("doctor")
@@ -151,6 +165,36 @@ def doctor_today_queue():
         Appointment.appt_date == today,
         Appointment.status.in_(["confirmed", "completed", "held"])
     ).order_by(Appointment.slot_start.asc()).all()
+
+    return jsonify([_appointment_json(a) for a in appts]), 200
+
+
+# ---------------------------------------------------------------------------
+# M5: GET /appointments/mine — returns the calling patient's appointments
+# ---------------------------------------------------------------------------
+
+@appointments_bp.get("/appointments/mine")
+@login_required
+def my_appointments():
+    """
+    GET /appointments/mine (M5 fix)
+    Returns all appointments for the currently authenticated patient,
+    ordered by date descending. Patients see their own; doctors/admins
+    get a 403.
+    """
+    user_role = g.current_user["role"]
+    user_id = g.current_user["id"]
+
+    if user_role != "patient":
+        return _error("forbidden", "This endpoint is for patients only", 403)
+
+    patient = _get_patient_profile(user_id)
+    if not patient:
+        return _error("not_found", "Patient profile not found", 404)
+
+    appts = Appointment.query.filter_by(patient_id=patient.id).order_by(
+        Appointment.appt_date.desc(), Appointment.slot_start.desc()
+    ).all()
 
     return jsonify([_appointment_json(a) for a in appts]), 200
 
@@ -220,14 +264,22 @@ def hold_slot():
         Appointment.status.in_(["held", "confirmed"])
     ).first()
 
-
     if existing_active:
         return _error("slot_taken", "This slot is no longer available. Please select another slot.", 409)
 
+    # M2 fix: admin must supply patient_id explicitly — no more PatientProfile.query.first() fallback.
     if not patient and user_role == "admin":
-        patient = PatientProfile.query.first()
+        admin_patient_id = body.get("patient_id")
+        if not admin_patient_id:
+            return _error(
+                "validation_error",
+                "Admins must supply 'patient_id' when holding a slot on behalf of a patient",
+                422,
+                [{"field": "patient_id", "message": "patient_id is required for admin-initiated holds"}]
+            )
+        patient = PatientProfile.query.get(admin_patient_id)
         if not patient:
-            return _error("no_patient", "No patient profile found in system", 400)
+            return _error("not_found", f"Patient profile {admin_patient_id} not found", 404)
 
     try:
         appt = Appointment(
@@ -251,11 +303,18 @@ def hold_slot():
 @appointments_bp.get("/appointments/<int:appointment_id>/hold-status")
 @login_required
 def hold_status(appointment_id):
-    """GET /appointments/{id}/hold-status"""
+    """
+    GET /appointments/{id}/hold-status
+    C4 fix: caller must own the appointment (or be admin).
+    """
     _sweep_expired_holds()
     appt = Appointment.query.get(appointment_id)
     if not appt:
         return _error("not_found", "Appointment not found", 404)
+
+    # C4 fix: ownership check — patients and doctors can only see their own
+    if not _is_appointment_owner(appt, g.current_user["id"], g.current_user["role"]):
+        return _error("forbidden", "You are not authorized to view this appointment", 403)
 
     return jsonify(_appointment_json(appt)), 200
 
@@ -263,11 +322,23 @@ def hold_status(appointment_id):
 @appointments_bp.post("/appointments/<int:appointment_id>/confirm")
 @login_required
 def confirm_booking(appointment_id):
-    """POST /appointments/{id}/confirm (Chunk 9 + Chunk 12 Pre-visit LLM Triage)"""
+    """
+    POST /appointments/{id}/confirm (Chunk 9 + Chunk 12 Pre-visit LLM Triage)
+    C2 fix: only the owning patient (or admin) may confirm.
+    H4 fix: enqueue_notification and sync_calendar_event called after confirm.
+    H1 fix: LLM call dispatched as async Celery task (returns pending status immediately).
+    """
     _sweep_expired_holds()
     appt = Appointment.query.get(appointment_id)
     if not appt:
         return _error("not_found", "Appointment not found", 404)
+
+    # C2 fix: only the patient who holds it (or an admin) may confirm
+    user_role = g.current_user["role"]
+    user_id = g.current_user["id"]
+    if user_role != "admin":
+        if not (appt.patient and appt.patient.user_id == user_id):
+            return _error("forbidden", "You are not authorized to confirm this appointment", 403)
 
     if appt.status == "expired":
         return _error("hold_expired", "Slot hold has expired. Please select the slot again.", 409)
@@ -292,34 +363,45 @@ def confirm_booking(appointment_id):
         appt.confirmed_at = datetime.now(timezone.utc)
 
         if symptoms_text:
-            summary_dict = generate_pre_visit_summary(symptoms_text)
-            if summary_dict:
-                db.session.add(
-                    SymptomSummary(
-                        appointment_id=appt.id,
-                        raw_symptoms=symptoms_text,
-                        urgency=summary_dict.get("urgency", "Low"),
-                        chief_complaint=summary_dict.get("chief_complaint", symptoms_text[:120]),
-                        suggested_questions=summary_dict.get("suggested_questions", []),
-                        llm_status="ok"
-                    )
-                )
-            else:
-                db.session.add(
-                    SymptomSummary(
-                        appointment_id=appt.id,
-                        raw_symptoms=symptoms_text,
-                        urgency="Low",
-                        chief_complaint=symptoms_text[:120],
-                        suggested_questions=[],
-                        llm_status="failed"
-                    )
-                )
+            # H1 fix: create SymptomSummary with llm_status="pending" immediately,
+            # then fire async task to fill in the real LLM result.
+            ss = SymptomSummary(
+                appointment_id=appt.id,
+                raw_symptoms=symptoms_text,
+                urgency="Low",
+                chief_complaint=symptoms_text[:120],
+                suggested_questions=[],
+                llm_status="pending",
+            )
+            db.session.add(ss)
 
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
         return _error("slot_taken", "This slot is no longer available. Please select another slot.", 409)
+
+    # H1: dispatch LLM triage as async task (after commit so the SS row exists)
+    if symptoms_text:
+        try:
+            from app.tasks import run_pre_visit_llm
+            run_pre_visit_llm.delay(appt.id, symptoms_text)
+        except Exception:
+            # Celery may not be running in dev/test; graceful fallback
+            pass
+
+    # H4 fix: wire notification and calendar sync
+    try:
+        from app.services.notifications import enqueue_notification
+        recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
+        enqueue_notification(appt.id, "booking_confirmed", recipient=recipient_email)
+    except Exception:
+        pass  # notification failure must not block the booking response
+
+    try:
+        from app.services.calendar import sync_calendar_event
+        sync_calendar_event(appt.id, action="create")
+    except Exception:
+        pass  # calendar sync failure must not block the booking response
 
     return jsonify(_appointment_json(appt)), 200
 
@@ -331,10 +413,31 @@ def submit_visit_notes(appointment_id):
     """
     POST /appointments/{id}/visit-notes (Chunk 13)
     Doctor submits clinical notes + prescriptions → triggers post-visit LLM summary.
+    C3  fix: only the appointment's doctor (or admin) may submit notes.
+    M3  fix: appointment must be in 'confirmed' status.
+    H7  fix: schedule_medication_reminders() called after commit.
+    H1  fix: LLM post-visit summary dispatched as async task.
     """
     appt = Appointment.query.get(appointment_id)
     if not appt:
         return _error("not_found", "Appointment not found", 404)
+
+    user_role = g.current_user["role"]
+    user_id = g.current_user["id"]
+
+    # C3 fix: doctor must own this appointment
+    if user_role != "admin":
+        doc = _get_doctor_profile(user_id)
+        if not doc or doc.id != appt.doctor_id:
+            return _error("forbidden", "You can only submit notes for your own appointments", 403)
+
+    # M3 fix: guard against notes on un-confirmed appointments
+    if appt.status != "confirmed":
+        return _error(
+            "invalid_status",
+            f"Visit notes can only be submitted for confirmed appointments (current status: '{appt.status}')",
+            400
+        )
 
     body = request.get_json(silent=True) or {}
     clinical_notes = (body.get("clinical_notes") or "").strip()
@@ -345,7 +448,7 @@ def submit_visit_notes(appointment_id):
             {"field": "clinical_notes", "message": "Clinical notes are required"}
         ])
 
-    # 1. Create or update VisitNote
+    # 1. Create or update VisitNote — llm_status starts as "pending" (H1 fix)
     vn = appt.visit_note
     if not vn:
         vn = VisitNote(appointment_id=appt.id, clinical_notes=clinical_notes, llm_status="pending")
@@ -353,6 +456,7 @@ def submit_visit_notes(appointment_id):
         db.session.flush()
     else:
         vn.clinical_notes = clinical_notes
+        vn.llm_status = "pending"
 
     # 2. Add Prescription items
     if isinstance(prescriptions_input, list):
@@ -368,17 +472,24 @@ def submit_visit_notes(appointment_id):
                 )
                 db.session.add(p_item)
 
-    # 3. Generate Post-Visit LLM Summary
-    summary_dict = generate_post_visit_summary(clinical_notes, prescriptions_input)
-    if summary_dict and "patient_summary" in summary_dict:
-        vn.patient_friendly_summary = summary_dict["patient_summary"]
-        vn.llm_status = "ok"
-    else:
-        vn.patient_friendly_summary = f"Patient Summary: {clinical_notes[:150]}"
-        vn.llm_status = "failed"
-
     appt.status = "completed"
     db.session.commit()
+
+    # H1 fix: dispatch async post-visit LLM task
+    try:
+        from app.tasks import run_post_visit_llm
+        run_post_visit_llm.delay(appt.id, clinical_notes, prescriptions_input)
+    except Exception:
+        pass  # Celery may not be running in dev/test
+
+    # H7 fix: schedule medication reminders from prescription items
+    try:
+        from app.services.reminders import schedule_medication_reminders
+        # Re-query vn to include the freshly-committed prescription_items
+        vn = VisitNote.query.get(vn.id)
+        schedule_medication_reminders(vn)
+    except Exception:
+        pass  # reminder scheduling must not block the visit-notes response
 
     return jsonify(_appointment_json(appt)), 200
 
@@ -386,17 +497,29 @@ def submit_visit_notes(appointment_id):
 @appointments_bp.get("/appointments/<int:appointment_id>/summary")
 @login_required
 def get_appointment_summary(appointment_id):
-    """GET /appointments/{id}/summary (Chunks 12 & 13)"""
+    """
+    GET /appointments/{id}/summary (Chunks 12 & 13)
+    C4 fix: caller must own the appointment (or be admin).
+    H5: this endpoint is now surfaced in the patient frontend.
+    """
     appt = Appointment.query.get(appointment_id)
     if not appt:
         return _error("not_found", "Appointment not found", 404)
+
+    # C4 fix: ownership check
+    if not _is_appointment_owner(appt, g.current_user["id"], g.current_user["role"]):
+        return _error("forbidden", "You are not authorized to view this appointment summary", 403)
+
     return jsonify(_appointment_json(appt)), 200
 
 
 @appointments_bp.delete("/appointments/<int:appointment_id>")
 @login_required
 def cancel_appointment(appointment_id):
-    """DELETE /appointments/{id} (Chunk 10)"""
+    """
+    DELETE /appointments/{id} (Chunk 10)
+    H4 fix: enqueue_notification called when appointment is cancelled.
+    """
     appt = Appointment.query.get(appointment_id)
     if not appt:
         return _error("not_found", "Appointment not found", 404)
@@ -415,5 +538,13 @@ def cancel_appointment(appointment_id):
 
     appt.status = "cancelled"
     db.session.commit()
+
+    # H4 fix: notify patient of cancellation
+    try:
+        from app.services.notifications import enqueue_notification
+        recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
+        enqueue_notification(appt.id, "booking_cancelled", recipient=recipient_email)
+    except Exception:
+        pass
 
     return jsonify({"message": "Appointment cancelled successfully", "appointment": _appointment_json(appt)}), 200

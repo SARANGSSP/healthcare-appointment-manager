@@ -72,7 +72,7 @@ export default function AdminOverviewPage() {
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         {overview && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>

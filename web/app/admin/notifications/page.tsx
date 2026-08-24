@@ -92,7 +92,7 @@ export default function AdminNotificationsPage() {
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         <Card>
           <h2>Notification Delivery Queue (Chunk 14)</h2>

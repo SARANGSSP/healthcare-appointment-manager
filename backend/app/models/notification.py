@@ -8,8 +8,10 @@ class Notification(db.Model):
     appointment_id = db.Column(
         db.Integer, db.ForeignKey("appointment.id", ondelete="CASCADE"), nullable=False
     )
-    type = db.Column(db.String(20), nullable=False)
+    type = db.Column(db.String(40), nullable=False)
     channel = db.Column(db.String(20), nullable=False, default="email")
+    # H2 fix: recipient email stored so SendGrid knows where to send
+    recipient = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(20), nullable=False, default="pending")
     retry_count = db.Column(db.Integer, nullable=False, default=0)
     last_attempt_at = db.Column(db.DateTime(timezone=True))
@@ -17,8 +19,10 @@ class Notification(db.Model):
     appointment = db.relationship("Appointment", back_populates="notifications")
 
     __table_args__ = (
+        # Widened to include enqueue_notification type strings used in routes (H4/H10)
         db.CheckConstraint(
-            "type IN ('confirmation', 'reminder', 'cancellation', 'leave_notice')",
+            "type IN ('confirmation', 'reminder', 'cancellation', 'leave_notice', "
+            "'booking_confirmed', 'booking_cancelled', 'leave_cancelled')",
             name="ck_notification_type",
         ),
         db.CheckConstraint("channel = 'email'", name="ck_notification_channel"),

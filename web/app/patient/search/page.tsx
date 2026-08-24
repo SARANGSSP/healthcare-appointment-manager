@@ -142,7 +142,7 @@ export default function PatientSearchPage() {
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         <Card>
           <h2>Search Doctors</h2>

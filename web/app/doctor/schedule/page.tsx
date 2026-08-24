@@ -128,7 +128,7 @@ export default function DoctorSchedulePage() {
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         <Card>
           <h2>Mark Scheduled Leave</h2>

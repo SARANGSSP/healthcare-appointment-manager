@@ -21,6 +21,8 @@ import {
   fetchDoctors,
   retryNotification,
   updateDoctor,
+  markDoctorLeave,
+  fetchDoctorAvailability,
   type Doctor,
 } from "../../lib/api";
 import { useRequireRole } from "../../lib/useRequireRole";
@@ -68,6 +70,13 @@ export default function AdminPortal() {
   const [password, setPassword] = useState("");
   const [slotDuration, setSlotDuration] = useState(20);
   const [submitting, setSubmitting] = useState(false);
+
+  // Leave marking state (H9/H10)
+  const [leaveDoctorId, setLeaveDoctorId] = useState<number | null>(null);
+  const [leaveDate, setLeaveDate] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [conflictWarning, setConflictWarning] = useState<{ count: number } | null>(null);
 
   // Toast state
   const [toast, setToast] = useState<{
@@ -176,6 +185,54 @@ export default function AdminPortal() {
     }
   };
 
+  const handleMarkLeaveCheck = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!leaveDoctorId || !leaveDate) {
+      showToast("failed", "Validation Error", "Please select a doctor and date.");
+      return;
+    }
+
+    try {
+      setSubmittingLeave(true);
+      // Fetch availability for that date to check for conflicts (H10 fix)
+      const avail = await fetchDoctorAvailability(leaveDoctorId, leaveDate);
+      const conflicts = avail.slots.filter((s) => s.status === "taken").length;
+
+      if (conflicts > 0) {
+        setConflictWarning({ count: conflicts });
+      } else {
+        await executeMarkLeave();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to check leave conflicts";
+      showToast("failed", "Error checking conflicts", msg);
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
+  const executeMarkLeave = async () => {
+    if (!leaveDoctorId || !leaveDate) return;
+    try {
+      setSubmittingLeave(true);
+      await markDoctorLeave(leaveDoctorId, {
+        leave_date: leaveDate,
+        reason: leaveReason.trim() || undefined,
+      });
+      showToast("success", "Leave Marked", `Leave has been successfully marked for Dr. ${doctors.find((d) => d.id === leaveDoctorId)?.full_name}.`);
+      setLeaveDoctorId(null);
+      setLeaveDate("");
+      setLeaveReason("");
+      setConflictWarning(null);
+      loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to mark leave";
+      showToast("failed", "Error marking leave", msg);
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
   const resetForm = () => {
     setFullName("");
     setSpecialisation("");
@@ -224,7 +281,7 @@ export default function AdminPortal() {
           </Button>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         {/* OVERVIEW METRICS CARDS (Chunk 18) */}
         {overview && (
@@ -302,7 +359,7 @@ export default function AdminPortal() {
                       <Button size="sm" variant="secondary" onClick={() => openEditModal(doc)} style={{ marginRight: "0.5rem" }}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleteDoctorId(doc.id)}>
+                      <Button size="sm" variant="destructive" onClick={() => setDeleteDoctorId(doc.id)}>
                         Delete
                       </Button>
                     </div>
@@ -311,6 +368,65 @@ export default function AdminPortal() {
               ]}
             />
           )}
+        </Card>
+
+        {/* DOCTOR LEAVE MANAGEMENT (H9/H10) */}
+        <Card>
+          <h2>Mark Doctor Leave</h2>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-slate)", margin: "0 0 1rem 0" }}>
+            Mark a date on which a doctor is on leave. Any appointments on this date will be cancelled and patients notified.
+          </p>
+          <form onSubmit={handleMarkLeaveCheck} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+              <div>
+                <label style={{ fontSize: "0.875rem", fontWeight: 600, display: "block", marginBottom: "0.375rem" }}>
+                  Select Doctor
+                </label>
+                <select
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    borderRadius: "var(--radius-control)",
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-paper)",
+                    color: "var(--color-ink)",
+                    height: "38px"
+                  }}
+                  value={leaveDoctorId || ""}
+                  onChange={(e) => setLeaveDoctorId(Number(e.target.value) || null)}
+                  required
+                >
+                  <option value="">-- Choose Doctor --</option>
+                  {doctors.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.full_name} ({d.specialisation})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Input
+                label="Leave Date"
+                type="date"
+                value={leaveDate}
+                onChange={(e) => setLeaveDate(e.target.value)}
+                required
+              />
+
+              <Input
+                label="Reason (Optional)"
+                placeholder="Medical Summit, Vacation, etc."
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Button type="submit" variant="primary" disabled={submittingLeave}>
+                {submittingLeave ? "Checking Conflicts..." : "Mark Doctor Leave"}
+              </Button>
+            </div>
+          </form>
         </Card>
 
         {/* NOTIFICATION MONITORING TABLE (Chunk 14) */}
@@ -425,6 +541,33 @@ export default function AdminPortal() {
               <div className="modal-footer" style={{ marginTop: "1rem" }}>
                 <Button variant="secondary" onClick={() => setDeleteDoctorId(null)}>Cancel</Button>
                 <Button variant="primary" onClick={handleDeleteConfirm}>Confirm Delete</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LEAVE CONFLICT WARNING MODAL (H10) */}
+        {conflictWarning && (
+          <div className="modal-overlay">
+            <div className="modal-dialog" style={{ maxWidth: "450px" }}>
+              <div className="modal-header" style={{ borderBottom: "1px solid var(--color-coral)" }}>
+                <h2 style={{ color: "var(--color-coral)" }}>Leave Conflict Warning</h2>
+                <button type="button" onClick={() => setConflictWarning(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem" }}>
+                  &times;
+                </button>
+              </div>
+              <p style={{ color: "var(--color-ink)", marginTop: "0.5rem" }}>
+                Dr. {doctors.find((d) => d.id === leaveDoctorId)?.full_name} has{" "}
+                <strong>{conflictWarning.count} active appointment(s)</strong> scheduled on {leaveDate}.
+              </p>
+              <p style={{ color: "var(--color-slate)", fontSize: "0.875rem" }}>
+                Marking this leave will automatically cancel these appointments and send email notifications to all affected patients.
+              </p>
+              <div className="modal-footer" style={{ marginTop: "1.5rem" }}>
+                <Button variant="secondary" onClick={() => setConflictWarning(null)}>Cancel</Button>
+                <Button variant="destructive" onClick={executeMarkLeave} disabled={submittingLeave}>
+                  {submittingLeave ? "Cancelling & Marking..." : "Confirm anyway"}
+                </Button>
               </div>
             </div>
           </div>

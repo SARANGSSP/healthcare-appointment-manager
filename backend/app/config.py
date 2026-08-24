@@ -35,10 +35,18 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES_MINUTES = os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "15")
     JWT_REFRESH_TOKEN_EXPIRES_DAYS = os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "7")
 
-    # --- Reserved for upcoming chunks (see .env.example) ---
+    # --- Queue / cache (Chunk 8) ---
     REDIS_URL = os.environ.get("REDIS_URL")
-    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-    SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+
+    # --- LLM providers — M1 fix: keys live in Config, read via current_app.config ---
+    # Use GEMINI_API_KEY for Google Gemini (primary) or GROQ_API_KEY for Groq (fallback).
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+    # --- Email (Chunk 14) ---
+    SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+
+    # --- Google Calendar OAuth (Chunk 15) ---
     GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
     GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
     GOOGLE_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")

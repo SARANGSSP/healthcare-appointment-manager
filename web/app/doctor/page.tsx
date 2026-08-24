@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "../../components/shell/AppShell";
-import { Badge } from "../../components/ui/Badge";
+import { Badge, UrgencyBadge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
@@ -188,16 +188,6 @@ export default function DoctorPortal() {
     }
   };
 
-  const getUrgencyBadge = (urgency?: "Low" | "Medium" | "High") => {
-    switch (urgency) {
-      case "High":
-        return <Badge tone="coral">HIGH URGENCY</Badge>;
-      case "Medium":
-        return <Badge tone="amber">MEDIUM URGENCY</Badge>;
-      default:
-        return <Badge tone="sage">LOW URGENCY</Badge>;
-    }
-  };
 
 
   if (!ready || loading) return null;
@@ -220,7 +210,7 @@ export default function DoctorPortal() {
           </p>
         </div>
 
-        <VitalsLine tone="sage" animate />
+        <VitalsLine tone="sage" />
 
         {/* TODAY'S APPOINTMENT QUEUE CARD (Chunk 12 & 13) */}
         <Card className="card-elevated">
@@ -264,7 +254,7 @@ export default function DoctorPortal() {
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      {getUrgencyBadge(appt.symptom_summary?.urgency)}
+                      <UrgencyBadge level={appt.symptom_summary?.urgency || "Low"} />
                       <Badge tone={appt.status === "completed" ? "sage" : "ink"}>
                         {appt.status.toUpperCase()}
                       </Badge>
@@ -363,7 +353,7 @@ export default function DoctorPortal() {
                           <span style={{ fontSize: "0.875rem" }}>
                             <strong>{p.medication_name}</strong> ({p.dosage}) — {p.frequency} for {p.duration_days} days
                           </span>
-                          <Button size="sm" variant="ghost" type="button" onClick={() => handleRemovePrescriptionItem(idx)}>
+                          <Button size="sm" variant="destructive" type="button" onClick={() => handleRemovePrescriptionItem(idx)}>
                             Remove
                           </Button>
                         </div>
@@ -432,7 +422,7 @@ export default function DoctorPortal() {
                   header: "Action",
                   render: (l) => (
                     <div style={{ textAlign: "right" }}>
-                      <Button size="sm" variant="ghost" onClick={() => handleDeleteLeave(l.id)}>
+                      <Button size="sm" variant="destructive" onClick={() => handleDeleteLeave(l.id)}>
                         Remove
                       </Button>
                     </div>

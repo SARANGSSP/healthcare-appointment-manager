@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "../../components/shell/AppShell";
-import { Badge } from "../../components/ui/Badge";
+import { Badge, UrgencyBadge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
@@ -18,6 +18,8 @@ import {
   fetchDoctorAvailability,
   fetchDoctors,
   holdSlot,
+  fetchAppointmentSummary,
+  fetchMyAppointments,
   type Appointment,
   type Doctor,
   type DoctorAvailability,
@@ -53,6 +55,11 @@ export default function PatientHome() {
   // Active or Confirmed booking state
   const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
 
+  // My appointments & summary modal states (M5 & H5)
+  const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
+  const [loadingMyAppointments, setLoadingMyAppointments] = useState(false);
+  const [activeSummary, setActiveSummary] = useState<Appointment | null>(null);
+
   // Toast state
   const [toast, setToast] = useState<{
     variant: ToastVariant;
@@ -78,11 +85,24 @@ export default function PatientHome() {
     }
   }, []);
 
+  const loadMyAppointments = useCallback(async () => {
+    try {
+      setLoadingMyAppointments(true);
+      const data = await fetchMyAppointments();
+      setMyAppointments(data);
+    } catch (err: unknown) {
+      // ignore
+    } finally {
+      setLoadingMyAppointments(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (ready) {
       loadDoctors();
+      loadMyAppointments();
     }
-  }, [ready, loadDoctors]);
+  }, [ready, loadDoctors, loadMyAppointments]);
 
   const handleFilterChange = (val: string) => {
     setSpecialisationFilter(val);
@@ -180,6 +200,7 @@ export default function PatientHome() {
       setHeldAppointment(null);
       showToast("success", "Appointment confirmed", `Your appointment with Dr. ${confirmed.doctor_name} is confirmed!`);
       if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
+      loadMyAppointments(); // M5 reload
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to confirm appointment";
       showToast("failed", "Booking failed", msg);
@@ -197,9 +218,20 @@ export default function PatientHome() {
       showToast("info", "Appointment Cancelled", "Your appointment has been cancelled and the slot is released.");
       setConfirmedAppointment(null);
       if (selectedDoctor) loadAvailability(selectedDoctor.id, selectedDate);
+      loadMyAppointments(); // M5 reload
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to cancel appointment";
       showToast("failed", "Cancellation failed", msg);
+    }
+  };
+
+  const handleViewSummary = async (apptId: number) => {
+    try {
+      const summary = await fetchAppointmentSummary(apptId);
+      setActiveSummary(summary);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load appointment summary";
+      showToast("failed", "Error loading summary", msg);
     }
   };
 
@@ -246,7 +278,7 @@ export default function PatientHome() {
                 </strong>
               </div>
 
-              <Button size="sm" variant="ghost" onClick={() => handleCancelClick(confirmedAppointment.id)}>
+              <Button size="sm" variant="destructive" onClick={() => handleCancelClick(confirmedAppointment.id)}>
                 Cancel Appointment
               </Button>
             </div>
@@ -295,6 +327,65 @@ export default function PatientHome() {
             </div>
           </Card>
         )}
+
+        {/* YOUR APPOINTMENTS SECTION (M5 & H5) */}
+        <Card>
+          <h2>Your Appointments</h2>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-slate)", margin: "0 0 1.25rem 0" }}>
+            View your upcoming schedule, past consultations, and clinical summaries.
+          </p>
+          {loadingMyAppointments ? (
+            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>Loading appointments...</p>
+          ) : myAppointments.length === 0 ? (
+            <p style={{ color: "var(--color-slate)", textAlign: "center", padding: "1rem" }}>
+              You don't have any appointments booked.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {myAppointments.map((appt) => (
+                <div
+                  key={appt.id}
+                  style={{
+                    padding: "1rem",
+                    borderRadius: "var(--radius-control)",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-paper-raised)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <div>
+                    <strong style={{ fontSize: "1rem", display: "block" }}>
+                      Dr. {appt.doctor_name} ({appt.specialisation})
+                    </strong>
+                    <span style={{ fontSize: "0.875rem", color: "var(--color-slate)", display: "block", marginTop: "0.25rem" }}>
+                      {appt.appt_date} at <span style={{ fontFamily: "var(--font-mono)" }}>{appt.slot_start}–{appt.slot_end}</span>
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Badge tone={appt.status === "completed" || appt.status === "confirmed" ? "sage" : appt.status === "held" ? "amber" : "coral"}>
+                      {appt.status.toUpperCase()}
+                    </Badge>
+                    
+                    <Button size="sm" variant="secondary" onClick={() => handleViewSummary(appt.id)}>
+                      View Details
+                    </Button>
+
+                    {appt.status === "confirmed" && (
+                      <Button size="sm" variant="destructive" onClick={() => handleCancelClick(appt.id)}>
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
 
         {/* Doctor Search Card */}
         <Card>
@@ -532,6 +623,91 @@ export default function PatientHome() {
               </div>
             </form>
           </Card>
+        )}
+
+        {/* APPOINTMENT SUMMARY MODAL (H5) */}
+        {activeSummary && (
+          <div className="modal-overlay">
+            <div className="modal-dialog" style={{ maxWidth: "600px" }}>
+              <div className="modal-header">
+                <h2>Appointment Details & Summary</h2>
+                <button type="button" onClick={() => setActiveSummary(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem" }}>
+                  &times;
+                </button>
+              </div>
+
+              <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase", display: "block" }}>
+                    Doctor Consultation
+                  </span>
+                  <strong style={{ fontSize: "1.125rem" }}>
+                    Dr. {activeSummary.doctor_name} ({activeSummary.specialisation})
+                  </strong>
+                  <span style={{ display: "block", fontSize: "0.875rem", color: "var(--color-slate)", marginTop: "0.25rem" }}>
+                    Date: {activeSummary.appt_date} | Time: {activeSummary.slot_start} – {activeSummary.slot_end}
+                  </span>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-slate)", textTransform: "uppercase", display: "block", marginBottom: "0.25rem" }}>
+                    Status
+                  </span>
+                  <Badge tone={activeSummary.status === "completed" || activeSummary.status === "confirmed" ? "sage" : activeSummary.status === "held" ? "amber" : "coral"}>
+                    {activeSummary.status.toUpperCase()}
+                  </Badge>
+                </div>
+
+                {/* Pre-Visit Triage Summary */}
+                {activeSummary.symptom_summary && (
+                  <div style={{ background: "var(--color-paper)", padding: "1rem", borderRadius: "var(--radius-control)", border: "1px solid var(--color-border)" }}>
+                    <h3 style={{ margin: 0, fontSize: "0.9375rem" }}>Pre-Visit Symptoms & Urgency</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                      <span style={{ fontSize: "0.8125rem", color: "var(--color-slate)" }}>AI Urgency:</span>
+                      <UrgencyBadge level={activeSummary.symptom_summary.urgency || "Low"} />
+                    </div>
+                    <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.9375rem" }}>
+                      <strong>Chief Complaint:</strong> {activeSummary.symptom_summary.chief_complaint}
+                    </p>
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.875rem", color: "var(--color-slate)" }}>
+                      <strong>Submitted Symptoms:</strong> {activeSummary.symptom_summary.raw_symptoms}
+                    </p>
+                  </div>
+                )}
+
+                {/* Post-Visit Care Summary */}
+                {activeSummary.visit_note && (
+                  <div style={{ background: "var(--color-sage-tint)", padding: "1rem", borderRadius: "var(--radius-control)", border: "1px solid var(--color-sage)" }}>
+                    <h3 style={{ margin: 0, fontSize: "0.9375rem", color: "#3f5b44" }}>Doctor Care Summary</h3>
+                    <p style={{ fontSize: "0.9375rem", marginTop: "0.5rem", margin: "0.5rem 0 0 0", color: "var(--color-ink)" }}>
+                      {activeSummary.visit_note.patient_friendly_summary || activeSummary.visit_note.clinical_notes}
+                    </p>
+
+                    {activeSummary.visit_note.prescriptions.length > 0 && (
+                      <div style={{ marginTop: "0.75rem" }}>
+                        <span style={{ fontSize: "0.8125rem", color: "#3f5b44", fontWeight: 600, display: "block" }}>
+                          Prescribed Medication Instructions:
+                        </span>
+                        <ul style={{ margin: "0.25rem 0 0 1.25rem", padding: 0, fontSize: "0.875rem", color: "var(--color-ink)" }}>
+                          {activeSummary.visit_note.prescriptions.map((p, idx) => (
+                            <li key={idx}>
+                              <strong>{p.medication_name}</strong> ({p.dosage}) — {p.frequency} for {p.duration_days} days
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer" style={{ marginTop: "1.5rem" }}>
+                <Button variant="secondary" onClick={() => setActiveSummary(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

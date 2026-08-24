@@ -11,6 +11,7 @@ from flask import Blueprint, g, jsonify, request
 from app.auth.decorators import login_required, role_required
 from app.extensions import db
 from app.models import Appointment, DoctorLeave, DoctorProfile, User
+from app.services.sweeper import sweep_expired_holds  # H8 fix
 
 
 doctors_bp = Blueprint("doctors", __name__)
@@ -115,7 +116,9 @@ def doctor_availability(doctor_id):
     """
     Computes real slot availability for a doctor on a specific date:
     (Working hours - Leave - Existing active bookings)
+    H8 fix: sweep expired holds before computing availability.
     """
+    sweep_expired_holds()  # H8 fix: ensure expired holds are cleared first
     doc = DoctorProfile.query.get(doctor_id)
     if not doc:
         return _error("not_found", "Doctor profile not found", 404)
@@ -389,6 +392,15 @@ def mark_doctor_leave(doctor_id):
     leave = DoctorLeave(doctor_id=doctor_id, leave_date=leave_date, reason=reason)
     db.session.add(leave)
     db.session.commit()
+
+    # H10 fix: notify patients whose appointments were cancelled due to leave
+    for appt in active_appts:
+        try:
+            from app.services.notifications import enqueue_notification
+            recipient_email = appt.patient.user.email if appt.patient and appt.patient.user else ""
+            enqueue_notification(appt.id, "leave_cancelled", recipient=recipient_email)
+        except Exception:
+            pass  # notification failure must not fail the leave-marking response
 
     res_data = _leave_json(leave)
     res_data["affected_appointments_count"] = affected_count

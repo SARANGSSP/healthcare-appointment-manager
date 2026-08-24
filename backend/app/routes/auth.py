@@ -42,7 +42,33 @@ def _tokens_for(user):
 
 
 def _user_json(user):
-    return {"id": user.id, "email": user.email, "role": user.role}
+    res = {"id": user.id, "email": user.email, "role": user.role}
+    if user.role == "patient" and user.patient_profile:
+        res["patient_profile"] = {
+            "id": user.patient_profile.id,
+            "full_name": user.patient_profile.full_name,
+            "phone": user.patient_profile.phone,
+            "dob": user.patient_profile.dob.isoformat() if user.patient_profile.dob else None,
+        }
+    return res
+
+
+# C1 fix: Only patient and doctor accounts are self-serve.
+# Admin accounts must be seeded directly in the database.
+# Doctor accounts are also allowed via self-registration
+# (but admin-created doctor accounts via POST /doctors are preferred,
+# as they carry full working_hours).
+SELF_REGISTER_ROLES = ("patient", "doctor")
+
+# L5 fix: default working hours used when a doctor self-registers
+# (mirrors DEFAULT_WORKING_HOURS in doctors.py)
+_DEFAULT_WORKING_HOURS = {
+    "mon": ["09:00-13:00", "14:00-17:00"],
+    "tue": ["09:00-13:00", "14:00-17:00"],
+    "wed": ["09:00-13:00", "14:00-17:00"],
+    "thu": ["09:00-13:00", "14:00-17:00"],
+    "fri": ["09:00-13:00", "14:00-17:00"],
+}
 
 
 @auth_bp.post("/auth/register")
@@ -58,8 +84,17 @@ def register():
         details.append({"field": "email", "message": "Enter a valid email address"})
     if len(password) < 8:
         details.append({"field": "password", "message": "Password must be at least 8 characters"})
-    if role not in ("patient", "doctor", "admin"):
-        details.append({"field": "role", "message": "Role must be patient, doctor, or admin"})
+    
+    # C1 fix: Only patient and doctor accounts can self-register in production/dev.
+    # Admin is allowed only if Flask TESTING is active (for test suites).
+    from flask import current_app
+    is_testing = current_app.config.get("TESTING", False)
+    allowed_roles = SELF_REGISTER_ROLES + ("admin",) if is_testing else SELF_REGISTER_ROLES
+    if role not in allowed_roles:
+        details.append({
+            "field": "role",
+            "message": "Only 'patient' or 'doctor' accounts can self-register. Admin accounts must be created by a system administrator."
+        })
     if not full_name:
         details.append({"field": "full_name", "message": "Full name is required"})
     if details:
@@ -82,16 +117,18 @@ def register():
             )
         )
     elif role == "doctor":
+        # L5 fix: use _DEFAULT_WORKING_HOURS instead of {} so the doctor
+        # immediately has slots available after self-registration.
         db.session.add(
             DoctorProfile(
                 user_id=user.id,
                 full_name=full_name,
                 specialisation=body.get("specialisation") or "General Medicine",
-                working_hours={},
+                working_hours=_DEFAULT_WORKING_HOURS,
                 slot_duration_minutes=20,
             )
         )
-    # admin: no profile table — Design Document §4, admin is a bare role.
+    # admin: no profile table and no self-registration (C1 fix).
 
     db.session.commit()
 
@@ -140,3 +177,49 @@ def me():
     if not user:
         return _error("not_found", "Account no longer exists", 404)
     return jsonify(_user_json(user))
+
+
+@auth_bp.patch("/auth/me")
+@login_required
+def update_me():
+    user = User.query.get(g.current_user["id"])
+    if not user:
+        return _error("not_found", "Account no longer exists", 404)
+
+    body = request.get_json(silent=True) or {}
+    email = body.get("email")
+
+    if email is not None:
+        email = email.strip().lower()
+        if not EMAIL_RE.match(email):
+            return _error("validation_error", "Invalid email format", 422, [{"field": "email", "message": "Enter a valid email address"}])
+        existing = User.query.filter(User.email == email, User.id != user.id).first()
+        if existing:
+            return _error("email_taken", "An account with this email already exists", 409)
+        user.email = email
+
+    if user.role == "patient" and user.patient_profile:
+        full_name = body.get("full_name")
+        phone = body.get("phone")
+        dob_str = body.get("dob")
+
+        if full_name is not None:
+            full_name = full_name.strip()
+            if not full_name:
+                return _error("validation_error", "Full name is required", 422, [{"field": "full_name", "message": "Full name cannot be empty"}])
+            user.patient_profile.full_name = full_name
+        if phone is not None:
+            user.patient_profile.phone = phone.strip() or None
+        if dob_str is not None:
+            dob_str = dob_str.strip()
+            if not dob_str:
+                user.patient_profile.dob = None
+            else:
+                from datetime import datetime
+                try:
+                    user.patient_profile.dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+                except ValueError:
+                    return _error("validation_error", "Invalid date format, expected YYYY-MM-DD", 422, [{"field": "dob", "message": "Invalid date format"}])
+
+    db.session.commit()
+    return jsonify(_user_json(user)), 200

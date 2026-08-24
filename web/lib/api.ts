@@ -292,6 +292,10 @@ export function cancelAppointment(appointmentId: number): Promise<{ message: str
   });
 }
 
+export function fetchMyAppointments(): Promise<Appointment[]> {
+  return request<Appointment[]>("/appointments/mine");
+}
+
 export function fetchTodayQueue(date?: string): Promise<Appointment[]> {
   const query = date ? `?date=${encodeURIComponent(date)}` : "";
   return request<Appointment[]>(`/appointments/today${query}`);
@@ -346,6 +350,24 @@ export function retryNotification(notificationId: number): Promise<{ message: st
   return request<{ message: string; status: string; retry_count: number }>(`/admin/notifications/${notificationId}/retry`, {
     method: "POST",
   });
+}
+
+export interface UpdatePatientInput {
+  email?: string;
+  full_name?: string;
+  phone?: string;
+  dob?: string;
+}
+
+export function updatePatientMe(input: UpdatePatientInput): Promise<any> {
+  return request<any>("/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchMe(): Promise<any> {
+  return request<any>("/auth/me");
 }
 
 
